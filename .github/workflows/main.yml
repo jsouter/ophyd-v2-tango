@@ -1,0 +1,29 @@
+on: [push]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/jsouter/alpine:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: say hello
+        run: echo hello
+
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/jsouter/ophyd-v2-tango/sardemo:v1
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: start sardana
+        run: |
+          service mariadb start
+          /usr/local/tango/bin/tango start
+          Sardana demo
