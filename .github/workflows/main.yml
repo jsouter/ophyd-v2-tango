@@ -21,9 +21,9 @@ jobs:
     steps:
       - name: start sardana
         run: |
-          ls
           service mariadb start
           /usr/local/tango/bin/tango start
           Sardana demo &
           sleep 10
+          python3 tango_devices.py
 
