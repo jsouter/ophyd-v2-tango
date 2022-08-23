@@ -19,6 +19,8 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
+      - name: checkout repo
+        uses: actions/checkout@v3.0.2
       - name: start sardana
         run: |
           service mariadb start
