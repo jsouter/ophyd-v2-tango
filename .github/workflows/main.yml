@@ -1,20 +1,17 @@
 on: [push]
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    container:
-      image: ghcr.io/jsouter/alpine:latest
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-    steps:
-      - name: say hello
-        run: echo hello
-
-
-jobs:
-  test:
+#   test:
+#     runs-on: ubuntu-latest
+#     container:
+#       image: ghcr.io/jsouter/alpine:latest
+#       credentials:
+#         username: ${{ github.actor }}
+#         password: ${{ secrets.GITHUB_TOKEN }}
+#     steps:
+#       - name: say hello
+#         run: echo hello
+  sardana:
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/jsouter/ophyd-v2-tango/sardemo:v1
@@ -24,6 +21,9 @@ jobs:
     steps:
       - name: start sardana
         run: |
+          ls
           service mariadb start
           /usr/local/tango/bin/tango start
-          Sardana demo
+          Sardana demo &
+          sleep 10
+
