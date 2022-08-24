@@ -14,7 +14,7 @@ from bluesky.run_engine import get_bluesky_event_loop
 from bluesky.run_engine import call_in_bluesky_event_loop
 
 def get_dtype(attribute) -> str:
-    print('Python has a json library, probably better to use that than do this')
+    # print('Python has a json library, probably better to use that than do this')
     value_class = attribute.value.__class__
     json_type = None
     if value_class in (int, float):
@@ -58,7 +58,7 @@ class TangoAttr(TangoSignal):
     async def connect(self, attr: str):
         '''Should set the member variables proxy and signal_name. May be called when no other connector used to connect signals'''
         if not self._connected:
-            print('Getting proxy from dict using dev name, better to use ophyd name')
+            # print('Getting proxy from dict using dev name, better to use ophyd name')
             self.signal_name = attr
             self.proxy = await get_proxy_from_dict(self.dev_name)
             try:
@@ -302,6 +302,6 @@ if __name__ == "__main__":
 
     from cbtest import mycallback
     RE(scan([],motor1,0,1,11), LiveTable(['motor1:Position']))
-
+    RE(scan([],motor1,1,2,motor2,5,10,11), LiveTable(['motor1:Position', 'motor2:Position']))
     # RE(scan([],motor1,0,1000,motor2,0,1000,2), LiveTable(['motor1:Position', 'motor2:Position']))
     # RE(scan([],motor1,0,1,motor2,10,101,11), mycallback(['motor1:Position', 'motor2:Position']))
