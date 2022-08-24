@@ -24,5 +24,6 @@ jobs:
       - name: start sardana
         run: |
           /startsard.sh
+          sleep 10
           python3 tango_devices.py
 
