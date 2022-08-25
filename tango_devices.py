@@ -1,10 +1,10 @@
 from PyTango.asyncio import AttributeProxy as AsyncAttributeProxy # type: ignore
 from PyTango.asyncio import DeviceProxy as AsyncDeviceProxy # type: ignore
-from PyTango._tango import DevState, AttrQuality # type: ignore
+from PyTango import DeviceProxy
+from PyTango._tango import DevState, AttrQuality, EventType # type: ignore
 import asyncio
 import re
 from ophyd.v2.core import AsyncStatus
-
 
 from typing import get_type_hints, Dict, Protocol, Union, Type, Coroutine, List
 from ophyd.v2.core import CommsConnector
@@ -14,6 +14,9 @@ from bluesky.run_engine import get_bluesky_event_loop
 from bluesky.run_engine import call_in_bluesky_event_loop
 
 def get_dtype(attribute) -> str:
+    #https://pytango.readthedocs.io/en/v9.3.4/data_types.html
+    #see above for examples of what the dtypes are expected to be. e.g. "int32" -> this fn needs work
+    #or is that just on the server end?? bluesky doesnt need this level of information
     # print('Python has a json library, probably better to use that than do this')
     value_class = attribute.value.__class__
     json_type = None
@@ -65,6 +68,9 @@ class TangoAttr(TangoSignal):
                 await self.proxy.read_attribute(attr)
             except:
                 raise Exception(f"Could not read attribute {self.signal_name}")
+            if isinstance(self, TangoAttrRW):
+                print('RW attributes need sync proxies for subscriptions. will try and fix this later')
+                self.sync_proxy = DeviceProxy(self.dev_name)
             self._connected = True
 
 class TangoAttrR(TangoAttr):
@@ -83,17 +89,47 @@ class TangoAttrR(TangoAttr):
     async def get_descriptor(self):
         attr_data = await self.proxy.read_attribute(self.signal_name)
         dtype = get_dtype(attr_data)
-        source = 'tango://' + self.dev_name + '/' + attr_data.name
+        source = 'tango://' + self.proxy.get_db_host() + ':' + self.proxy.get_db_port() + \
+                                                    '/' + self.dev_name + '/' + attr_data.name
         return {"shape": self._get_shape(attr_data),
                 "dtype": dtype,  # jsonschema types
                 "source": source,}
 
+def passer(*args, **kwargs):
+    pass
+
 class TangoAttrRW(TangoAttrR):
+    print('We need a more specific event than CHANGE_EVENT. why has QUALITY_EVENT been removed?')
+    print('Need to write some exception/error handling for waiting for quality')
+    print('try and implement proper async wait_for_valid_quality')
+    latest_quality = None
     async def write(self, value):
         await self.proxy.write_attribute(self.signal_name, value)
     async def get_quality(self):
         reading = await self.proxy.read_attribute(self.signal_name)
+        print(reading.quality)
         return reading.quality
+    async def sync_wait_for_valid_quality(self):
+        def record_quality(doc):
+            self.latest_quality = doc.attr_value.quality
+        sub = self.sync_proxy.subscribe_event(self.signal_name, EventType.CHANGE_EVENT, record_quality)
+        while True:
+            if self.latest_quality == AttrQuality.ATTR_VALID:
+                self.sync_proxy.unsubscribe_event(sub)
+                return
+            await asyncio.sleep(0)
+    async def wait_for_valid_quality(self):
+        def record_quality(doc):
+            # print('there has been an event')
+            self.latest_quality = doc.attr_value.quality
+        sub = await self.proxy.subscribe_event(self.signal_name, EventType.CHANGE_EVENT, record_quality)
+        while True:
+            if self.latest_quality == AttrQuality.ATTR_VALID:
+                self.proxy.unsubscribe_event(sub)
+                return
+            await asyncio.sleep(0)
+            #even with only one motor, this sleep is required to update, not certain why.
+            #maybe the sub only updates when control is returned to it??
 
 class TangoCommand(TangoSignal):
     async def connect(self, command: str):
@@ -240,15 +276,15 @@ class TangoMotor(TangoDevice):
         async def write_and_wait():
             pos = self.comm.position
             try:
-                # await self.write(pos, value)
                 await pos.write(value)
             except Exception:
                 raise Exception("Something went wrong in write_and_wait")
-            # quality = await self.get_quality(pos)
-            quality = await pos.get_quality()
-            while quality != AttrQuality.ATTR_VALID:
-                # quality = await self.get_quality(pos)
-                quality = await pos.get_quality()
+            await pos.wait_for_valid_quality()
+            # await pos.sync_wait_for_valid_quality()
+            # await pos.wait_for_status()
+            # quality = await pos.get_quality()
+            # while quality != AttrQuality.ATTR_VALID:
+                # quality = await pos.get_quality()
         status = AsyncStatus(asyncio.wait_for(write_and_wait(), timeout=timeout))
         return status
 
@@ -278,6 +314,9 @@ def motor(dev_name: str, ophyd_name: str):
     return TangoMotor(c, ophyd_name)
 
 
+
+
+
 if __name__ == "__main__":
        
     from bluesky.run_engine import get_bluesky_event_loop
@@ -289,6 +328,9 @@ if __name__ == "__main__":
     import bluesky.plan_stubs as bps
     from bluesky.callbacks import LiveTable, LivePlot
     from bluesky.run_engine import call_in_bluesky_event_loop
+
+    import timeit
+
     # set_green_mode(GreenMode.Asyncio)
     # set_green_mode(GreenMode.Gevent)
 
@@ -296,12 +338,30 @@ if __name__ == "__main__":
     with CommsConnector():
         motor1 = motor("motor/motctrl01/1", "motor1")
         motor2 = motor("motor/motctrl01/2", "motor2")
-    motor2.set_config_value('velocity', 10000)
+        motor3 = motor("motor/motctrl01/3", "motor3")
+        motor4 = motor("motor/motctrl01/4", "motor4")
+        motors = [motor1,motor2,motor3,motor4]
     # print(call_in_bluesky_event_loop(motor1.read()))
     # RE(count([motor1],num=10,delay=None), LiveTable(['motor1:Position']))
-
+    print(call_in_bluesky_event_loop(motor1.describe()))
+    
     from cbtest import mycallback
-    RE(scan([],motor1,0,1,11), LiveTable(['motor1:Position']))
-    RE(scan([],motor1,1,2,motor2,5,10,11), LiveTable(['motor1:Position', 'motor2:Position']))
+
+    velocity = 10
+    for m in motors:
+        m.set_config_value('velocity', velocity)
+    for i in range(4):
+        scan_args = []
+        table_args = []
+        for j in range(i+1):
+            scan_args += [motors[j],0,1]
+            table_args += ['motor'+str(j+1)+':Position']
+        thetime = time.time()
+        RE(scan([],*scan_args,11), LiveTable(table_args))
+        print(time.time() - thetime)
+
+
+    # RE(scan([],motor1,1,2,motor2,5,10,11), LiveTable(['motor1:Position', 'motor2:Position']))
     # RE(scan([],motor1,0,1000,motor2,0,1000,2), LiveTable(['motor1:Position', 'motor2:Position']))
     # RE(scan([],motor1,0,1,motor2,10,101,11), mycallback(['motor1:Position', 'motor2:Position']))
+    
