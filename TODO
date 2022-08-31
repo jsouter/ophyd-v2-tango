@@ -7,4 +7,25 @@ Implement other connectors I haven't rewritten yet
 Write unit tests that utilise real (no hardware but actually running on Tango) devices 
 Write class to mock output of AsyncDeviceProxy for unit tests.
 Cleanup sync proxy remnants. Ctrl+F for "sync"
-Change type hint for get_tango_connector to be TangoConnector
+<!-- Change type hint for get_tango_connector to be TangoConnector -->
+Consider if there is a better way to implement _get_dtype
+How do we implement "source" for commands and pipes? These need not have unique names, can have an attr+command with same name
+Implement DISCONNECTED_ERROR for tango 
+Use Reading and Descriptor type hints from protocols.py
+Decide how to handle raised Exceptions. Specify exceptions more
+TangoAttr.connect(): what exception type?
+Inherit from Signal for Pipe and add put to W version
+make a plan that can handle pipes/anything not just scalar (look into bluesky plans designed to handle 2-3D data.)
+None/null json type not encouraged by Dtype bluesky protocol. Also missing "object" and there is strange separation of "number" and "integer"
+Most likely need to rename the __connect__ method in Comm
+wait_for_not_moving should likely be set in the motor device level, using observe_monitor from TangoAttrR, then we have to have Position as TangoAttrRW to have put and observe_reading
+Closer look at TangoMonitor
+Need to use put_nowait as Tom said. See q.py in zzztestingstuff
+
+
+UNIT TEST IDEAS:
+putting a value to an attribute that is beyond the max or min value of the device
+Setting velocity to zero and waiting for timeout
+asserting that we can pass Tango device to built in callbacks (not yet implemented)
+assert dtype of descriptor is correct
+ensure that async put and reads are non blocking

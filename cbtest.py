@@ -1,7 +1,7 @@
 from bluesky.callbacks.core import get_obj_fields
 
 from bluesky.callbacks.core import CallbackBase
-from numpy import argmin
+from numpy import argmin # type: ignore
 
 import time
 class mycallback(CallbackBase):

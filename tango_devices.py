@@ -1,45 +1,45 @@
-from matplotlib.pyplot import connect
 from PyTango.asyncio import AttributeProxy as AsyncAttributeProxy  # type: ignore
 from PyTango.asyncio import DeviceProxy as AsyncDeviceProxy  # type: ignore
-from PyTango import DeviceProxy  # type: ignore
+from PyTango import DeviceProxy, DevFailed  # type: ignore
 from PyTango._tango import DevState, AttrQuality, EventType  # type: ignore
 import asyncio
 import re
+import sys
 from ophyd.v2.core import AsyncStatus  # type: ignore
 
-from typing import Callable, get_type_hints, Dict, Protocol, Union, Type, Coroutine, List, Any, Optional
+from typing import Callable, Generic, TypeVar, get_type_hints, Dict, Protocol, Union, Type, Coroutine, List, Any, Optional
 from ophyd.v2.core import CommsConnector
+from bluesky.protocols import Reading, Descriptor
 from abc import ABC, abstractmethod
 from collections import OrderedDict
 from bluesky.run_engine import get_bluesky_event_loop
 from bluesky.run_engine import call_in_bluesky_event_loop
+from bluesky.protocols import Dtype
+from ophyd.v2.core import Signal, SignalR, SignalW, Comm
 
 
-def _get_dtype(attribute) -> str:
+def _get_dtype(attribute) -> Dtype:
     # https://pytango.readthedocs.io/en/v9.3.4/data_types.html
-    # see above for examples of what the dtypes are expected to be. e.g. "int32" -> this fn needs work
-    # or is that just on the server end?? bluesky doesnt need this level of information
-    # print('Python has a json library, probably better to use that than do this')
     value_class = attribute.value.__class__
-    json_type = None
-    if value_class in (int, float):
-        json_type = 'number'
+    if value_class is float:
+        return 'number'
+    elif value_class is int:
+        return 'integer'
     elif value_class is tuple:
-        json_type = 'array'
+        return 'array'
     elif value_class in (str, DevState):
-        json_type = 'string'
+        return 'string'
     elif value_class is bool:
-        json_type = 'boolean'
-    elif value_class is type(None):
-        json_type = 'null'
+        return 'boolean'
+    # elif value_class is type(None):
+    #     return 'null'
         #print('Setting None to json type null, not sure if appropriate')
-    if not json_type:
-        raise NotImplementedError(
-            f"dtype not implemented for {value_class} with attribute {attribute.name}")
-    return json_type
+    else:
+        raise NotImplementedError(f"dtype not implemented for {value_class} with attribute {attribute.name}")
 
 
 _tango_dev_proxies: Dict[str, AsyncDeviceProxy] = {}
+
 
 
 async def _get_proxy_from_dict(device: str) -> AsyncDeviceProxy:
@@ -47,22 +47,36 @@ async def _get_proxy_from_dict(device: str) -> AsyncDeviceProxy:
         try:
             proxy_future = AsyncDeviceProxy(device)
             proxy = await proxy_future
-        except:
+        except DevFailed:
             raise Exception(f"Could not connect to DeviceProxy for {device}")
         _tango_dev_proxies[device] = proxy
     return _tango_dev_proxies[device]
 
 
-class TangoSignal(ABC):
+class TangoSignal(Signal):
     @abstractmethod
     async def connect(self, dev_name: str, signal_name: str):
         pass
+    
+    _connected = False
+    _source = None
 
     @property
     def connected(self):
-        if not hasattr(self, '_connected'):
-            self._connected = False
         return self._connected
+
+    @property
+    def source(self) -> str:
+        # print(f"source called for {self.dev_name}:{self.signal_name}")
+        if not self._source:
+            self._source = (f'tango://{self.proxy.get_db_host()}:'
+                            f'{self.proxy.get_db_port()}/'
+                            f'{self.dev_name}/{self.signal_name}')
+            if isinstance(self, TangoPipe):
+                self._source += '(Pipe)'
+            elif isinstance(self, TangoCommand):
+                self._source += '(Command)'
+        return self._source
 
 
 class TangoAttr(TangoSignal):
@@ -80,7 +94,24 @@ class TangoAttr(TangoSignal):
             self._connected = True
 
 
-class TangoAttrR(TangoAttr):
+# def tango_observe_monitor(subscription_id):
+
+# class TangoMonitor: # this should probably inherit from Monitor Protocol but that is namespaced behind epics
+#     async def __call__(self, signal: TangoSignal, callback):
+#         self.sub_id = await signal.proxy.subscribe_event(signal.signal_name, EventType.CHANGE_EVENT, callback)
+#         self.unsub_coro = signal.proxy.unsubscribe_event(self.sub_id)
+#     async def close(self):
+#         await self.unsub_coro
+
+
+
+class TangoAttrR(TangoAttr, SignalR):
+    print('Need to implement observe_reading for TangoAttrR')
+    print('Not happy with how observe_reading is implemented'
+    'supposed to return async generator but it returns a sub id')
+    async def observe_reading(self, callback):
+        sub_id = await self.proxy.subscribe_event(self.signal_name, EventType.CHANGE_EVENT, callback)
+        return sub_id
     def _get_shape(self, reading):
         shape = []
         if reading.dim_y:  # For 2D arrays
@@ -91,19 +122,11 @@ class TangoAttrR(TangoAttr):
             shape.append(reading.dim_x)
         return shape
 
-    @property
-    def source(self):
-        if not hasattr(self, '_source'):
-            self._source = (f'tango://{self.proxy.get_db_host()}:'
-                            f'{self.proxy.get_db_port()}/'
-                            f'{self.dev_name}/{self.signal_name}')
-        return self._source
-
-    async def get_reading(self):
+    async def get_reading(self) -> Reading:
         attr_data = await self.proxy.read_attribute(self.signal_name)
         return {"value": attr_data.value, "timestamp": attr_data.time.totime()}
 
-    async def get_descriptor(self):
+    async def get_descriptor(self) -> Descriptor:
         attr_data = await self.proxy.read_attribute(self.signal_name)
         return {"shape": self._get_shape(attr_data),
                 "dtype": _get_dtype(attr_data),  # jsonschema types
@@ -120,14 +143,10 @@ class TangoAttrR(TangoAttr):
                 "source": self.source, }
 
 
-def passer(*args, **kwargs):
-    pass
-
-
-class TangoAttrRW(TangoAttrR):
+class TangoAttrW(TangoAttr, SignalW):
     latest_quality = None
 
-    async def write(self, value):
+    async def put(self, value):
         await self.proxy.write_attribute(self.signal_name, value)
 
     async def get_quality(self):
@@ -143,8 +162,7 @@ class TangoAttrRW(TangoAttrR):
             if self.latest_quality == AttrQuality.ATTR_VALID:
                 self.sync_proxy.unsubscribe_event(sub)
                 return
-
-
+                
     async def wait_for_not_moving(self):
         event = asyncio.Event()
         def set_event(reading):
@@ -154,6 +172,10 @@ class TangoAttrRW(TangoAttrR):
         sub = await self.proxy.subscribe_event('State', EventType.CHANGE_EVENT, set_event)
         await event.wait()
         self.proxy.unsubscribe_event(sub)
+
+class TangoAttrRW(TangoAttrR, TangoAttrW):
+    ...
+
 
 class TangoCommand(TangoSignal):
     async def connect(self, dev_name: str, command: str):
@@ -189,7 +211,7 @@ class TangoPipe(TangoSignal):
             self._connected = True
 
 
-class TangoComm(ABC):
+class TangoComm(Comm):
     def __init__(self, dev_name: str):
         self.proxy: AsyncDeviceProxy  # should be set by a tangoconnector
         if self.__class__ is TangoComm:
@@ -207,31 +229,39 @@ class TangoComm(ABC):
         return f"{type(self).__name__}(dev_name={self.dev_name!r})"
 
 
-# _tango_connectors: Dict[Type[TangoComm], TangoConnector]  = {}
-_tango_connectors: Dict[Type[TangoComm], Callable] = {}
-print('fix type hint for _tango_connectors')
+TangoCommT = TypeVar("TangoCommT", bound=TangoComm, contravariant=True)
+
+class TangoConnector(Protocol, Generic[TangoCommT]):
+    async def __call__(self, comm: TangoCommT):
+        ...
+
+_tango_connectors: Dict[Type[TangoComm], TangoConnector] = {}
 
 class ConnectTheRest:
-    print('rewrite so that we can call as we instantiate and have type checker be happy.')
-    # def __new__(cls, arg=None):
-    #     print('doing a weird thing in __new__ to make the class act like a function')
-    #     instance = super().__new__(cls)
-    #     if arg is None:
-    #         return instance
-    #     else:
-    #         return instance(arg)
-
+    '''
+    ConnectTheRest(comm: TangoComm)
+    Connector class that checks DeviceProxy for similarly named signals to those unconnected in the comm object. 
+    The connector connects to attributes/pipes/commands that have identical names to the hinted signal name when 
+    lowercased and non alphanumeric characters are removed.
+    e.g. the type hint "comm._position: TangoAttrRW" matches with the attribute "Position" on the DeviceProxy. 
+    Can be called like a function.
+    '''
+    def __new__(cls, arg: Optional[TangoComm] = None):
+        instance = super().__new__(cls)
+        if arg:
+            return instance(arg)
+        else:
+            return instance
+    def __await__(self):
+        ...
+  
     async def __call__(self, comm: TangoComm):
         self.comm = comm
-
-        # signals = get_attrs_from_hints(self.comm)
-        # self.signals2 = {signal: signals[signal] for signal in signals if signals[signal].connected}
-        # above is single line but maybe less clear
-
-        self.signals = get_attrs_from_hints(self.comm)
-        for signal in self.signals.copy():
-            if self.signals[signal].connected:
-                del self.signals[signal]
+        self.signals: Dict[str, TangoSignal] = {}
+        for signal_name in get_type_hints(comm):
+            signal = getattr(self.comm, signal_name)
+            if not signal.connected:
+                self.signals[signal_name] = signal
         if not self.signals:  # if dict empty
             return
         self.proxy = await _get_proxy_from_dict(comm.dev_name)
@@ -267,7 +297,7 @@ class ConnectTheRest:
 
     def schedule_signal(self, signal, signal_name):
         for signal_type in self.signal_types:
-            if issubclass(signal.__class__, self.signal_types[signal_type]['baseclass']):
+            if isinstance(signal, self.signal_types[signal_type]['baseclass']):
                 self.make_guesses(signal_type)
                 name_guess = self.guess_string(signal_name)
                 if name_guess in self.guesses[signal_type]:  # if key exists
@@ -275,15 +305,17 @@ class ConnectTheRest:
                     # print(f'Connecting unconnected signal "{signal_name}" to {self.comm.dev_name}:{attr_proper_name}')
                     coro = signal.connect(self.comm.dev_name, attr_proper_name)
                     self.coros.append(coro)
+                else:
+                    raise ValueError(f"No {signal_type} found resembling '{name_guess}'")
                 break  # prevents unnecessary checks: e.g. if attribute, dont check for pipe
 
 
-def get_tango_connector(comm: TangoComm) -> Callable:
+def get_tango_connector(comm: TangoComm) -> TangoConnector:
     if type(comm) in _tango_connectors:  # .keys()
         return _tango_connectors[type(comm)]
     else:
         print('Defaulting to "ConnectTheRest()"')
-        return ConnectTheRest()
+        return ConnectTheRest
 
 
 def tango_connector(connector, comm_cls=None):
@@ -341,6 +373,8 @@ class TangoDevice:
 class TangoMotorComm(TangoComm):
     position: TangoAttrRW
     velocity: TangoAttrRW
+    state: TangoAttrRW
+
 
 
 class TangoMotor(TangoDevice):
@@ -359,16 +393,15 @@ class TangoMotor(TangoDevice):
 
     async def set_config_value_async(self, attr_name: str, value):
         attr: TangoAttrRW = getattr(self.comm, attr_name)
-        await attr.write(value)
+        await attr.put(value)
 
     def set_config_value(self, attr_name: str, value):
         call_in_bluesky_event_loop(
             self.set_config_value_async(attr_name, value))
 
     def set(self, value, timeout: Optional[float] = None):
-        async def write_and_wait():
-            pos = self.comm.position
-            await pos.write(value)
+
+
             # q = asyncio.Queue()
 
             # sub = self.comm.state.monitor_reading_value(q.put_nowait)
@@ -378,12 +411,21 @@ class TangoMotor(TangoDevice):
             #         break
             # sub.close()
 
-            await pos.wait_for_not_moving()
+        async def write_and_wait():
+            pos = self.comm.position
+            state = self.comm.state
+            await pos.put(value)
+            # await pos.wait_for_not_moving()
+            event = asyncio.Event()
+            async def set_event(reading):
+                state_value = reading.attr_value.value
+                if state_value != DevState.MOVING:
+                    event.set()
+            sub_id = await state.observe_reading(set_event)
+            await event.wait()
+            state.proxy.unsubscribe_event(sub_id)
+
             # pos.sync_wait_for_valid_quality()
-            # await pos.wait_for_status()
-            # quality = await pos.get_quality()
-            # while quality != AttrQuality.ATTR_VALID:
-            # quality = await pos.get_quality()
         status = AsyncStatus(asyncio.wait_for(
             write_and_wait(), timeout=timeout))
         return status
@@ -398,9 +440,9 @@ class SyncTangoMotor(TangoMotor):
 
 
 
-def get_attrs_from_hints(comm: TangoComm):
-    hints = get_type_hints(comm)
-    return {signal_name: getattr(comm, signal_name) for signal_name in hints}
+# def get_attrs_from_hints(comm: TangoComm):
+#     hints = get_type_hints(comm)
+#     return {signal_name: getattr(comm, signal_name) for signal_name in hints}
 
 
 def make_tango_signals(comm: TangoComm):
@@ -410,13 +452,13 @@ def make_tango_signals(comm: TangoComm):
         setattr(comm, signal_name, signal)
 
 
-# @tango_connector
+@tango_connector
 async def motorconnector(comm: TangoMotorComm):
     await asyncio.gather(
         comm.position.connect(comm.dev_name, "Position"),
-        comm.velocity.connect(comm.dev_name, "Velocity"),
+        # comm.velocity.connect(comm.dev_name, "Velocity"),
     )
-    await ConnectTheRest()(comm)
+    await ConnectTheRest(comm)
 
 
 def motor(dev_name: str, ophyd_name: str):
@@ -435,8 +477,8 @@ def main():
     from bluesky.run_engine import RunEngine
     from bluesky.plans import count, scan
     import time
-    from tango import set_green_mode, get_green_mode
-    from tango import GreenMode
+    from tango import set_green_mode, get_green_mode # type: ignore
+    from tango import GreenMode # type: ignore
     import bluesky.plan_stubs as bps
     from bluesky.callbacks import LiveTable, LivePlot
     from bluesky.run_engine import call_in_bluesky_event_loop
