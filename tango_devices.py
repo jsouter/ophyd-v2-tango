@@ -73,7 +73,6 @@ class TangoAttr(TangoSignal):
             self.signal_name = attr
             self.proxy = await _get_proxy_from_dict(self.dev_name)
             self.sync_proxy = DeviceProxy(self.dev_name)
-            print('creating sync proxy for testing')
             try:
                 await self.proxy.read_attribute(attr)
             except:
@@ -126,8 +125,6 @@ def passer(*args, **kwargs):
 
 
 class TangoAttrRW(TangoAttrR):
-    print('Need to write some exception/error handling for waiting for quality')
-    print('is it possible to block until subscription? we may not want to cede control to the event loop here')
     latest_quality = None
 
     async def write(self, value):
@@ -137,7 +134,7 @@ class TangoAttrRW(TangoAttrR):
         reading = await self.proxy.read_attribute(self.signal_name)
         return reading.quality
 
-    async def sync_wait_for_valid_quality(self):
+    def sync_wait_for_valid_quality(self):
         def record_quality(doc):
             self.latest_quality = doc.attr_value.quality
         sub = self.sync_proxy.subscribe_event(
@@ -146,21 +143,17 @@ class TangoAttrRW(TangoAttrR):
             if self.latest_quality == AttrQuality.ATTR_VALID:
                 self.sync_proxy.unsubscribe_event(sub)
                 return
-            await asyncio.sleep(0)
 
-    async def wait_for_valid_quality(self):
-        def record_quality(doc):
-            self.latest_quality = doc.attr_value.quality
-        sub = await self.proxy.subscribe_event(self.signal_name, EventType.CHANGE_EVENT, record_quality)
-        # sub = asyncio.wait_for(self.proxy.subscribe_event(self.signal_name, EventType.CHANGE_EVENT, record_quality),timeout=None)
-        while True:
-            if self.latest_quality == AttrQuality.ATTR_VALID:
-                self.proxy.unsubscribe_event(sub)
-                return
-            await asyncio.sleep(0)
-            # even with only one motor, this sleep is required to update, not certain why.
-            # maybe the sub only updates when control is returned to it??
 
+    async def wait_for_not_moving(self):
+        event = asyncio.Event()
+        def set_event(reading):
+            state = reading.attr_value.value
+            if state != DevState.MOVING:
+                event.set()
+        sub = await self.proxy.subscribe_event('State', EventType.CHANGE_EVENT, set_event)
+        await event.wait()
+        self.proxy.unsubscribe_event(sub)
 
 class TangoCommand(TangoSignal):
     async def connect(self, dev_name: str, command: str):
@@ -217,7 +210,6 @@ class TangoComm(ABC):
 # _tango_connectors: Dict[Type[TangoComm], TangoConnector]  = {}
 _tango_connectors: Dict[Type[TangoComm], Callable] = {}
 print('fix type hint for _tango_connectors')
-
 
 class ConnectTheRest:
     print('rewrite so that we can call as we instantiate and have type checker be happy.')
@@ -280,15 +272,13 @@ class ConnectTheRest:
                 name_guess = self.guess_string(signal_name)
                 if name_guess in self.guesses[signal_type]:  # if key exists
                     attr_proper_name = self.guesses[signal_type][name_guess]
-                    print(
-                        f'Connecting unconnected signal "{signal_name}" to {self.comm.dev_name}:{attr_proper_name}')
+                    # print(f'Connecting unconnected signal "{signal_name}" to {self.comm.dev_name}:{attr_proper_name}')
                     coro = signal.connect(self.comm.dev_name, attr_proper_name)
                     self.coros.append(coro)
                 break  # prevents unnecessary checks: e.g. if attribute, dont check for pipe
 
 
 def get_tango_connector(comm: TangoComm) -> Callable:
-    print('change type hint for get_tango_connector to be TangoConnector')
     if type(comm) in _tango_connectors:  # .keys()
         return _tango_connectors[type(comm)]
     else:
@@ -378,12 +368,18 @@ class TangoMotor(TangoDevice):
     def set(self, value, timeout: Optional[float] = None):
         async def write_and_wait():
             pos = self.comm.position
-            try:
-                await pos.write(value)
-            except Exception:
-                raise Exception("Something went wrong in write_and_wait")
-            await pos.wait_for_valid_quality()
-            # await pos.sync_wait_for_valid_quality()
+            await pos.write(value)
+            # q = asyncio.Queue()
+
+            # sub = self.comm.state.monitor_reading_value(q.put_nowait)
+            # while True:
+            #     _, val = await q.get()
+            #     if val != DevState.MOVING:
+            #         break
+            # sub.close()
+
+            await pos.wait_for_not_moving()
+            # pos.sync_wait_for_valid_quality()
             # await pos.wait_for_status()
             # quality = await pos.get_quality()
             # while quality != AttrQuality.ATTR_VALID:
@@ -397,8 +393,9 @@ class SyncTangoMotor(TangoMotor):
     def read(self):
         return self.sync_read(self.comm.position)
 
-    async def describe(self):
+    def describe(self):
         return self.sync_describe(self.comm.position)
+
 
 
 def get_attrs_from_hints(comm: TangoComm):
@@ -466,7 +463,7 @@ def main():
     # print(call_in_bluesky_event_loop(motor1.set(0)))
     from cbtest import mycallback
 
-    velocity = 1000000
+    velocity = 1000
     for m in motors:
         m.set_config_value('velocity', velocity)
     for i in range(4):

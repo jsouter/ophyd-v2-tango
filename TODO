@@ -1,0 +1,10 @@
+Add exception case to wait_for_not_moving for when the state is e.g. in alarm state, right now it only check if not moving
+Rewrite TangoSignal etc to derive from the ophyd Signal classes
+implement observe monitor member functions etc
+More rigorous testing about async vs sync green mode overhead
+Rewrite ConnectTheRest to be callable as a function as type-checkable. Tom recommends implementing as a function and instatiating a class instance if required. Says he only implemented the protocol EpicsConnector for type checking reasons.
+Implement other connectors I haven't rewritten yet
+Write unit tests that utilise real (no hardware but actually running on Tango) devices 
+Write class to mock output of AsyncDeviceProxy for unit tests.
+Cleanup sync proxy remnants. Ctrl+F for "sync"
+Change type hint for get_tango_connector to be TangoConnector
