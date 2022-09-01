@@ -9,7 +9,7 @@ Write class to mock output of AsyncDeviceProxy for unit tests.
 Cleanup sync proxy remnants. Ctrl+F for "sync"
 <!-- Change type hint for get_tango_connector to be TangoConnector -->
 Consider if there is a better way to implement _get_dtype
-How do we implement "source" for commands and pipes? These need not have unique names, can have an attr+command with same name
+<!-- How do we implement "source" for commands and pipes? These need not have unique names, can have an attr+command with same name -->
 Implement DISCONNECTED_ERROR for tango 
 Use Reading and Descriptor type hints from protocols.py
 Decide how to handle raised Exceptions. Specify exceptions more
@@ -20,8 +20,10 @@ None/null json type not encouraged by Dtype bluesky protocol. Also missing "obje
 Most likely need to rename the __connect__ method in Comm
 wait_for_not_moving should likely be set in the motor device level, using observe_monitor from TangoAttrR, then we have to have Position as TangoAttrRW to have put and observe_reading
 Closer look at TangoMonitor
-Need to use put_nowait as Tom said. See q.py in zzztestingstuff
+<!-- Need to use put_nowait as Tom said. See q.py in zzztestingstuff -->
 investigate read_attribute_asynch functions etc
+
+Attempted to implement MockDeviceProxy with subscribe_event but asyncio may not be up to the task for it: we need to return a sub_id while also keeping a background thread/process that handles the callback. Maybe a job for run_in_executor but I don't want to spend all my time on this
 
 
 UNIT TEST IDEAS:
