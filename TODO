@@ -21,6 +21,7 @@ Most likely need to rename the __connect__ method in Comm
 wait_for_not_moving should likely be set in the motor device level, using observe_monitor from TangoAttrR, then we have to have Position as TangoAttrRW to have put and observe_reading
 Closer look at TangoMonitor
 Need to use put_nowait as Tom said. See q.py in zzztestingstuff
+investigate read_attribute_asynch functions etc
 
 
 UNIT TEST IDEAS:

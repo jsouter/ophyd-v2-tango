@@ -110,6 +110,7 @@ class TangoAttrR(TangoAttr, SignalR):
     print('Not happy with how observe_reading is implemented'
     'supposed to return async generator but it returns a sub id')
     async def observe_reading(self, callback):
+        print('in observe reading')
         sub_id = await self.proxy.subscribe_event(self.signal_name, EventType.CHANGE_EVENT, callback)
         return sub_id
     def _get_shape(self, reading):
@@ -183,9 +184,8 @@ class TangoCommand(TangoSignal):
             self.dev_name = dev_name
             self.signal_name = command
             self.proxy = await _get_proxy_from_dict(self.dev_name)
-            commands = self.proxy.command_list_query()
-            cmd_names = [c.cmd_name for c in commands]
-            assert self.signal_name in cmd_names, \
+            commands = self.proxy.get_command_list()
+            assert self.signal_name in commands, \
                 f"Command {command} not in list of commands"
             self._connected = True
 
@@ -374,7 +374,7 @@ class TangoMotorComm(TangoComm):
     position: TangoAttrRW
     velocity: TangoAttrRW
     state: TangoAttrRW
-
+    stop: TangoCommand
 
 
 class TangoMotor(TangoDevice):
@@ -415,15 +415,24 @@ class TangoMotor(TangoDevice):
             pos = self.comm.position
             state = self.comm.state
             await pos.put(value)
-            # await pos.wait_for_not_moving()
-            event = asyncio.Event()
-            async def set_event(reading):
-                state_value = reading.attr_value.value
-                if state_value != DevState.MOVING:
-                    event.set()
-            sub_id = await state.observe_reading(set_event)
-            await event.wait()
-            state.proxy.unsubscribe_event(sub_id)
+            q = asyncio.Queue()
+            sub = await state.observe_reading(q.put_nowait)
+            while True:
+                state_reading= await q.get()
+                if state_reading.attr_value.value != DevState.MOVING:
+                    break
+            state.proxy.unsubscribe_event(sub)
+            print('kind of works but should be using Monitor object?')
+
+        #     # await pos.wait_for_not_moving()
+        #     event = asyncio.Event()
+        #     async def set_event(reading):
+        #         state_value = reading.attr_value.value
+        #         if state_value != DevState.MOVING:
+        #             event.set()
+        #     sub_id = await state.observe_reading(set_event)
+        #     await event.wait()
+        #     state.proxy.unsubscribe_event(sub_id)
 
             # pos.sync_wait_for_valid_quality()
         status = AsyncStatus(asyncio.wait_for(
