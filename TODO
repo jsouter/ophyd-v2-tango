@@ -1,0 +1,40 @@
+Add exception case to wait_for_not_moving for when the state is e.g. in alarm state, right now it only check if not moving
+Rewrite TangoSignal etc to derive from the ophyd Signal classes
+implement observe monitor member functions etc
+More rigorous testing about async vs sync green mode overhead
+Rewrite ConnectTheRest to be callable as a function as type-checkable. Tom recommends implementing as a function and instatiating a class instance if required. Says he only implemented the protocol EpicsConnector for type checking reasons.
+Implement other connectors I haven't rewritten yet
+Write unit tests that utilise real (no hardware but actually running on Tango) devices 
+Write class to mock output of AsyncDeviceProxy for unit tests.
+Cleanup sync proxy remnants. Ctrl+F for "sync"
+<!-- Change type hint for get_tango_connector to be TangoConnector -->
+Consider if there is a better way to implement _get_dtype
+<!-- How do we implement "source" for commands and pipes? These need not have unique names, can have an attr+command with same name -->
+Implement DISCONNECTED_ERROR for tango 
+Use Reading and Descriptor type hints from protocols.py
+Decide how to handle raised Exceptions. Specify exceptions more
+TangoAttr.connect(): what exception type?
+Inherit from Signal for Pipe and add put to W version
+make a plan that can handle pipes/anything not just scalar (look into bluesky plans designed to handle 2-3D data.)
+None/null json type not encouraged by Dtype bluesky protocol. Also missing "object" and there is strange separation of "number" and "integer"
+Most likely need to rename the __connect__ method in Comm
+wait_for_not_moving should likely be set in the motor device level, using observe_monitor from TangoAttrR, then we have to have Position as TangoAttrRW to have put and observe_reading
+Closer look at TangoMonitor
+<!-- Need to use put_nowait as Tom said. See q.py in zzztestingstuff -->
+investigate read_attribute_asynch functions etc
+
+<!-- Attempted to implement MockDeviceProxy with subscribe_event but asyncio may not be up to the task for it: we need to return a sub_id while also keeping a background thread/process that handles the callback. Maybe a job for run_in_executor but I don't want to spend all my time on this -->
+At this point would it be better for each of the DeviceProxies to essentially be attribute proxies?
+Maybe DeviceProxies for pipes and configs and AttributeProxies for attributes
+maybe _get_proxy_from_dict returns attribute proxies if there are 3 slashes domain/family/member/attribute and if 2 slashes returns deviceproxy?
+the unique names for attributes should probably inherit from the Python names not the proper Tango names
+
+Need to package together into an actual python package to fix the imports for testing
+Fix pyproject.toml. Fix relative import stuff. ugh
+
+UNIT TEST IDEAS:
+putting a value to an attribute that is beyond the max or min value of the device
+Setting velocity to zero and waiting for timeout
+asserting that we can pass Tango device to built in callbacks (not yet implemented)
+assert dtype of descriptor is correct
+ensure that async put and reads are non blocking
