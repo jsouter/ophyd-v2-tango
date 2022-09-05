@@ -84,11 +84,11 @@ class MockDeviceProxy:
         return self._port_num
     def get_db_host(self):
         return self._host
-    async def get_attribute_list(self):
+    def get_attribute_list(self):
         return self._attributes
-    async def get_pipe_list(self):
+    def get_pipe_list(self):
         pass
-    async def get_command_list(self):
+    def get_command_list(self):
         pass
     def _read_attribute_sync(self, attr_name):
         # print('kind of janky but makes it easier to do background task in subscribe event??')
@@ -101,6 +101,7 @@ class MockDeviceProxy:
             dev_attr = DeviceAttribute()
             self._dev_attrs[attr_name] = dev_attr
             dev_attr.name = attr_name
+            dev_attr.value = 0 # kind of weird
             # dev_attr.nb_read = 1
         dev_attr.time = TimeVal().now()
         return dev_attr
@@ -173,18 +174,10 @@ class MockDeviceProxy:
     def __str__(self):
         return self.__repr__()
 
-_m = MockDeviceProxy("my/device/name")
-print(_m)
 
-
-_d = DeviceProxy("motor/motctrl01/1")
-print(_d)
-
-async def main():
+async def mockproxymain():
     global m
-    m = await _m
-    global d
-    d = await _d
+    m = await MockDeviceProxy("my/device/name")
     # print(await d.read_attribute("Position"))
     # print(await d.read_attribute("Position"))
 
@@ -226,14 +219,8 @@ async def main():
 
 
 
-    # print(await m.read_attribute("Position"))
-    # print(await m.write_attribute("Position", 100))
-    # print(await m.read_attribute("Position"))
-    # await asyncio.sleep(0)
-    
-
 if __name__ in "__main__":
     loop = asyncio.get_event_loop()
-    loop.run_until_complete(main())
+    loop.run_until_complete(mockproxymain())
     # print(d)
     # print(m)

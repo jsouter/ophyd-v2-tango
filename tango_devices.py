@@ -17,6 +17,8 @@ from bluesky.run_engine import call_in_bluesky_event_loop
 from bluesky.protocols import Dtype
 from ophyd.v2.core import Signal, SignalR, SignalW, Comm
 
+# from mockproxy import MockDeviceProxy
+
 
 def _get_dtype(attribute) -> Dtype:
     # https://pytango.readthedocs.io/en/v9.3.4/data_types.html
@@ -39,7 +41,8 @@ def _get_dtype(attribute) -> Dtype:
 
 
 _tango_dev_proxies: Dict[str, AsyncDeviceProxy] = {}
-
+# print('need to make a proxy dict singleton class so that we can swap out AsyncDeviceProxy for MockDeviceProxy')
+# print('or maybe its sufficient to just change the value of self.proxy')
 
 
 async def _get_proxy_from_dict(device: str) -> AsyncDeviceProxy:
@@ -48,7 +51,7 @@ async def _get_proxy_from_dict(device: str) -> AsyncDeviceProxy:
             proxy_future = AsyncDeviceProxy(device)
             proxy = await proxy_future
         except DevFailed:
-            raise Exception(f"Could not connect to DeviceProxy for {device}")
+            raise DevFailed(f"Could not connect to DeviceProxy for {device}")
         _tango_dev_proxies[device] = proxy
     return _tango_dev_proxies[device]
 
@@ -86,7 +89,7 @@ class TangoAttr(TangoSignal):
             self.dev_name = dev_name
             self.signal_name = attr
             self.proxy = await _get_proxy_from_dict(self.dev_name)
-            self.sync_proxy = DeviceProxy(self.dev_name)
+            # self.sync_proxy = DeviceProxy(self.dev_name)
             try:
                 await self.proxy.read_attribute(attr)
             except:
@@ -107,7 +110,7 @@ class TangoAttr(TangoSignal):
 
 class TangoAttrR(TangoAttr, SignalR):
     print('Need to implement observe_reading for TangoAttrR')
-    print('Not happy with how observe_reading is implemented'
+    print('Not happy with how observe_reading is implemented. '
     'supposed to return async generator but it returns a sub id')
     async def observe_reading(self, callback):
         print('in observe reading')
@@ -465,12 +468,13 @@ def make_tango_signals(comm: TangoComm):
 async def motorconnector(comm: TangoMotorComm):
     await asyncio.gather(
         comm.position.connect(comm.dev_name, "Position"),
-        # comm.velocity.connect(comm.dev_name, "Velocity"),
+        comm.velocity.connect(comm.dev_name, "Velocity"),
     )
     await ConnectTheRest(comm)
 
 
-def motor(dev_name: str, ophyd_name: str):
+def motor(dev_name: str, ophyd_name: Optional[str] = None):
+    ophyd_name = ophyd_name or re.sub(r'[^a-zA-Z\d]', '-', dev_name)
     c = TangoMotorComm(dev_name)
     return TangoMotor(c, ophyd_name)
 
@@ -512,6 +516,7 @@ def main():
     # RE(count([motor1],num=10,delay=None), LiveTable(['motor1:Position']))
     # print(call_in_bluesky_event_loop(motor1.describe()))
     # print(call_in_bluesky_event_loop(motor1.set(0)))
+    print(sys.path)
     from cbtest import mycallback
 
     velocity = 1000
@@ -551,6 +556,45 @@ def main():
 
     # RE(scan([],motor1,0,1,motor2,10,101,11), mycallback(['motor1:Position', 'motor2:Position']))
 
+
+# def main2():
+#     from bluesky.run_engine import get_bluesky_event_loop
+#     from bluesky.run_engine import RunEngine
+#     from bluesky.plans import count, scan
+#     import time
+#     from tango import set_green_mode, get_green_mode # type: ignore
+#     from tango import GreenMode # type: ignore
+#     import bluesky.plan_stubs as bps
+#     from bluesky.callbacks import LiveTable, LivePlot
+#     from bluesky.run_engine import call_in_bluesky_event_loop
+#     import timeit
+
+#     RE = RunEngine()
+#     global _get_proxy_from_dict
+#     _true_proxy_dict = _get_proxy_from_dict
+#     async def _get_mock_proxy(device: str) -> MockDeviceProxy:
+#         if device not in _tango_dev_proxies:
+#             try:
+#                 mock_proxy_future = MockDeviceProxy(device)
+#                 proxy = await mock_proxy_future
+#                 # print(proxy)
+#             except DevFailed:
+#                 raise Exception(f"Could not connect to DeviceProxy for {device}")
+#             _tango_dev_proxies[device] = proxy
+#         return _tango_dev_proxies[device]
+#     _get_proxy_from_dict = _get_mock_proxy
+#     with CommsConnector():
+#         device = motor("my/device/name", "device")
+#         print('ConnectTheRest messes things up somehow')
+#     print(device.comm.position.proxy)
+#     # loop = asyncio.new_event_loop()
+#     # print(get_bluesky_event_loop())
+#     # print(loop.run_until_complete(device.comm.position.proxy.write_attribute("Position",5)))
+#     # print(loop.run_until_complete(device.comm.position.proxy.read_attribute("Position")))
+#     # print(get_bluesky_event_loop())
+
+#     RE(count([device],11))
+    
 
 if __name__ in "__main__":
     main()
