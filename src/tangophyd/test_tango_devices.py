@@ -1,7 +1,7 @@
 from typing import OrderedDict
 import sys
 sys.path.append('../src/tangophyd')
-from tango_devices import TangoSignal, TangoAttr, motor
+from .tango_devices import TangoSignal, TangoAttr, motor
 
 import unittest
 import asyncio
@@ -66,7 +66,15 @@ class MotorTestReliesOnSardanaDemo(unittest.IsolatedAsyncioTestCase):
             test_motor = motor("motor/motctrl01/1", "test_motor")
         self.RE(bps.rd(test_motor))
 
-    def test_count_in_RE_with_callback(self):
+    def test_count_in_RE_with_callback_named_attribute(self):
         with CommsConnector():
             test_motor = motor("motor/motctrl01/1", "test_motor")
         self.RE(count([test_motor],1), LiveTable("test_motor:Position"))
+
+    def test_motor_scans(self):
+        rand_number = random.random() + 1.0
+        with CommsConnector():
+            test_motor = motor("motor/motctrl01/1", "test_motor")
+        self.RE(scan([],test_motor,0,rand_number,2), LiveTable("test_motor:Position"))
+        currentPos = call_in_bluesky_event_loop(test_motor.read())
+        assert currentPos['test_motor:Position']['value'] == rand_number, "Final position does not equal set number"

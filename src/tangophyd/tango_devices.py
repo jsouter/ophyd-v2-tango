@@ -517,7 +517,7 @@ def main():
     # print(call_in_bluesky_event_loop(motor1.describe()))
     # print(call_in_bluesky_event_loop(motor1.set(0)))
     print(sys.path)
-    from .cbtest import mycallback
+    from cbtest import mycallback
 
     velocity = 1000
     for m in motors:
