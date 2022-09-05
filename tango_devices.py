@@ -57,6 +57,8 @@ async def _get_proxy_from_dict(device: str) -> AsyncDeviceProxy:
 
 
 class TangoSignal(Signal):
+
+    print('remove the unuused fns that pass in TangoSignal')
     @abstractmethod
     async def connect(self, dev_name: str, signal_name: str):
         pass
@@ -80,7 +82,12 @@ class TangoSignal(Signal):
             elif isinstance(self, TangoCommand):
                 self._source += '(Command)'
         return self._source
-
+    def get_value(self):
+        pass
+    def monitor_reading(self):
+        pass
+    def monitor_value(self):
+        pass
 
 class TangoAttr(TangoSignal):
     async def connect(self, dev_name: str, attr: str):
@@ -95,6 +102,7 @@ class TangoAttr(TangoSignal):
             except:
                 raise Exception(f"Could not read attribute {self.signal_name}")
             self._connected = True
+
 
 
 # def tango_observe_monitor(subscription_id):
@@ -113,7 +121,7 @@ class TangoAttrR(TangoAttr, SignalR):
     print('Not happy with how observe_reading is implemented. '
     'supposed to return async generator but it returns a sub id')
     async def observe_reading(self, callback):
-        print('in observe reading')
+        # print('in observe reading')
         sub_id = await self.proxy.subscribe_event(self.signal_name, EventType.CHANGE_EVENT, callback)
         return sub_id
     def _get_shape(self, reading):
@@ -221,11 +229,11 @@ class TangoComm(Comm):
             raise TypeError(
                 "Can not create instance of abstract TangoComm class")
         self.dev_name = dev_name
-        self.__signals__ = make_tango_signals(self)
+        self._signals_ = make_tango_signals(self)
         self._connector = get_tango_connector(self)
         CommsConnector.schedule_connect(self)
 
-    async def __connect__(self):
+    async def _connect_(self):
         await self._connector(self)
 
     def __repr__(self) -> str:
@@ -327,18 +335,19 @@ def tango_connector(connector, comm_cls=None):
     _tango_connectors[comm_cls] = connector
 
 
-# async def get_proxy(dev_name):
-#     proxy = await AsyncDeviceProxy(dev_name)
-#     await _get_proxy_from_dict(dev_name)
-#     print(f'Adding dev name {dev_name} to proxy dict')
-#     return proxy
-
-
 class TangoDevice:
+    # def __new__(cls, *args, **kwargs):
+    #     if cls is TangoDevice:
+    #         raise TypeError("Should not instantiate TangoDevice directly, use a non-generic subclass")
+    #     instance = super().__new__(cls)
+    #     return object.__new__(cls)
     def __init__(self, comm: TangoComm, name: Optional[str] = None):
+        self.name = name or re.sub(r'[^a-zA-Z\d]', '-', comm.dev_name) # replace non alphanumeric characters with dash if name not set manually           
         self.comm = comm
         self.parent = None
-        self.name = name or re.sub(r'[^a-zA-Z\d]', '-', comm.dev_name) # replace non alphanumeric characters with dash if name not set manually
+        if self.__class__ is TangoDevice:
+            raise TypeError(
+                "Can not create instance of abstract TangoComm class")
 
     async def _read(self, *to_read):
         od = OrderedDict()
@@ -371,6 +380,14 @@ class TangoDevice:
             name = self.name + ':' + attr.signal_name
             od[name] = description
         return od
+    async def set_config_value_async(self, attr_name: str, value):
+        attr: TangoAttrRW = getattr(self.comm, attr_name)
+        await attr.put(value)
+
+    def set_config_value(self, attr_name: str, value):
+        call_in_bluesky_event_loop(
+            self.set_config_value_async(attr_name, value))
+
 
 
 class TangoMotorComm(TangoComm):
@@ -379,8 +396,37 @@ class TangoMotorComm(TangoComm):
     state: TangoAttrRW
     stop: TangoCommand
 
+# class TangoSingleAttributeComm(TangoComm):
+#     attribute: TangoAttr
+
+# class TangoSingleAttributeDevice(TangoDevice):
+#     comm: TangoSingleAttributeComm
+#     async def read(self):
+#         return await self._read(self.comm.attribute)
+
+#     async def describe(self):
+#         return await self._describe(self.comm.attribute)
+
+#     async def read_configuration(self):
+#         return await self._read()
+
+#     async def describe_configuration(self):
+#         return await self._describe()
+
+# @tango_connector
+# async def singleattributeconnector(comm: TangoMotorComm, attr_name):
+#     await asyncio.gather(
+#         comm.attribute.connect(comm.dev_name, "attr_name"),
+#     )
+
+# def tango_single_attribute_device(dev_name: str, attr_name: str, ophyd_name: Optional[str] = None):
+#     ophyd_name = ophyd_name or re.sub(r'[^a-zA-Z\d]', '-', dev_name)
+#     c = TangoSingleAttributeComm(dev_name, attr_name)
+#     return TangoSingleAttributeDevice(c, ophyd_name)
 
 class TangoMotor(TangoDevice):
+    print('set kind of works but should be using Monitor object?')
+
     comm: TangoMotorComm # satisfies type checker
     async def read(self):
         return await self._read(self.comm.position)
@@ -394,17 +440,18 @@ class TangoMotor(TangoDevice):
     async def describe_configuration(self):
         return await self._describe(self.comm.velocity)
 
-    async def set_config_value_async(self, attr_name: str, value):
-        attr: TangoAttrRW = getattr(self.comm, attr_name)
-        await attr.put(value)
 
-    def set_config_value(self, attr_name: str, value):
-        call_in_bluesky_event_loop(
-            self.set_config_value_async(attr_name, value))
+    def set_timeout(self, timeout):
+        self._timeout = timeout
+    
+    @property
+    def timeout(self):
+        if hasattr(self, '_timeout'):
+            return self._timeout
+        else:
+            return None
 
     def set(self, value, timeout: Optional[float] = None):
-
-
             # q = asyncio.Queue()
 
             # sub = self.comm.state.monitor_reading_value(q.put_nowait)
@@ -413,6 +460,7 @@ class TangoMotor(TangoDevice):
             #     if val != DevState.MOVING:
             #         break
             # sub.close()
+        timeout = timeout or self.timeout
 
         async def write_and_wait():
             pos = self.comm.position
@@ -425,7 +473,6 @@ class TangoMotor(TangoDevice):
                 if state_reading.attr_value.value != DevState.MOVING:
                     break
             state.proxy.unsubscribe_event(sub)
-            print('kind of works but should be using Monitor object?')
 
         #     # await pos.wait_for_not_moving()
         #     event = asyncio.Event()
@@ -503,6 +550,8 @@ def main():
 
     RE = RunEngine({})
     with CommsConnector():
+        # a = TangoDevice(TangoMotorComm("helpme"))
+        # print(f"a is {a}")
         # motor1 = syncmotor("motor/motctrl01/1", "motor1")
         # motor2 = syncmotor("motor/motctrl01/2", "motor2")
         # motor3 = syncmotor("motor/motctrl01/3", "motor3")
@@ -512,26 +561,25 @@ def main():
         motor3 = motor("motor/motctrl01/3", "motor3")
         motor4 = motor("motor/motctrl01/4", "motor4")
         motors = [motor1, motor2, motor3, motor4]
-    # print(call_in_bluesky_event_loop(motor1.describe()))
-    # RE(count([motor1],num=10,delay=None), LiveTable(['motor1:Position']))
-    # print(call_in_bluesky_event_loop(motor1.describe()))
-    # print(call_in_bluesky_event_loop(motor1.set(0)))
-    print(sys.path)
+
     from cbtest import mycallback
 
-    velocity = 1000
-    for m in motors:
-        m.set_config_value('velocity', velocity)
-    for i in range(4):
-        scan_args = []
-        table_args = []
-        for j in range(i+1):
-            scan_args += [motors[j], 0, 1]
-            table_args += ['motor'+str(j+1)+':Position']
-        thetime = time.time()
-        RE(scan([],*scan_args,11), LiveTable(table_args))
-        # RE(scan([], *scan_args, 11))
-        print('scan' + str(i+1), time.time() - thetime)
+    def scan1():
+        velocity = 1000
+        for m in motors:
+            m.set_config_value('velocity', velocity)
+            # m.set_timeout(0.0001)
+        for i in range(4):
+            scan_args = []
+            table_args = []
+            for j in range(i+1):
+                scan_args += [motors[j], 0, 1]
+                table_args += ['motor'+str(j+1)+':Position']
+            thetime = time.time()
+            RE(scan([],*scan_args,11), LiveTable(table_args))
+            # RE(scan([], *scan_args, 11))
+            print('scan' + str(i+1), time.time() - thetime)
+    scan1()
 
     # print('with 2 motors:')
     # for i in range(10):
@@ -556,6 +604,8 @@ def main():
 
     # RE(scan([],motor1,0,1,motor2,10,101,11), mycallback(['motor1:Position', 'motor2:Position']))
 
+    
+    # single = tango_single_attribute_device("motor/motctrl01/1", "Velocity")
 
 # def main2():
 #     from bluesky.run_engine import get_bluesky_event_loop
@@ -598,6 +648,11 @@ def main():
 
 if __name__ in "__main__":
     main()
+    from bluesky import RunEngine
+    from bluesky.plans import count
+    from bluesky.callbacks import LiveTable
+    from ophyd.v2.core import CommsConnector
+
     # python3 -m cProfile -o test.prof tango_devices.py
     # snakeviz test.prof
     # import cProfile

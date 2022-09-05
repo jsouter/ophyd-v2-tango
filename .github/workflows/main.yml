@@ -14,7 +14,7 @@ jobs:
   sardana:
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/jsouter/ophyd-v2-tango/sardemo:v2
+      image: ghcr.io/jsouter/ophyd-v2-tango/sardemo:v3
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
@@ -25,5 +25,5 @@ jobs:
         run: |
           /startsard.sh
           sleep 10
-          python3 tango_devices.py
+          python3 -m unittest test_tango_devices.py
 

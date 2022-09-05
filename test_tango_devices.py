@@ -1,6 +1,6 @@
 from typing import OrderedDict
-import sys
-sys.path.append('../src/tangophyd')
+# import sys
+# sys.path.append('../src/tangophyd')
 from .tango_devices import TangoSignal, TangoAttr, motor
 
 import unittest
@@ -14,7 +14,7 @@ import random
 import bluesky.plan_stubs as bps
 from bluesky.plans import count, scan
 from bluesky.callbacks import LiveTable, LivePlot
-
+import bluesky.utils
 
 class SignalTest(unittest.IsolatedAsyncioTestCase):
     def test_cant_instantiate_abstract_tango_signal(self):
@@ -69,12 +69,38 @@ class MotorTestReliesOnSardanaDemo(unittest.IsolatedAsyncioTestCase):
     def test_count_in_RE_with_callback_named_attribute(self):
         with CommsConnector():
             test_motor = motor("motor/motctrl01/1", "test_motor")
-        self.RE(count([test_motor],1), LiveTable("test_motor:Position"))
+        self.RE(count([test_motor],1), LiveTable(["test_motor:Position"]))
+        #why isnt it printing the reading???
 
+    def test_motor_bluesky_movable(self):
+        rand_number = random.random() + 1.0
+        with CommsConnector():
+            test_motor = motor("motor/motctrl01/1", "test_motor")
+        test_motor.set_config_value('velocity', 1000)
+        self.RE(bps.mv(test_motor,rand_number))
+        
     def test_motor_scans(self):
         rand_number = random.random() + 1.0
         with CommsConnector():
             test_motor = motor("motor/motctrl01/1", "test_motor")
-        self.RE(scan([],test_motor,0,rand_number,2), LiveTable("test_motor:Position"))
+        self.RE(scan([],test_motor,0,rand_number,2), LiveTable(["test_motor:Position"]))
         currentPos = call_in_bluesky_event_loop(test_motor.read())
         assert currentPos['test_motor:Position']['value'] == rand_number, "Final position does not equal set number"
+    
+
+    def test_motor_timeout(self):
+        with CommsConnector():
+            test_motor = motor("motor/motctrl01/1", "test_motor")
+        test_motor.set_config_value('velocity', 1000)
+        self.RE(bps.mv(test_motor,0))
+        #need a better way to move motor back to 0 position
+        #need to find a way to run set in an event loop and not RE?
+        test_motor.set_timeout(0.0000001)
+        test_motor.set_config_value('velocity', 0.1)
+
+        def do_mv():
+            rand_number = random.random() + 1.0
+            self.RE(bps.mv(test_motor,rand_number))
+        
+        self.assertRaises(bluesky.utils.FailedStatus, do_mv)
+        #need to find a better way to specify what exception

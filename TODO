@@ -22,9 +22,17 @@ wait_for_not_moving should likely be set in the motor device level, using observ
 Closer look at TangoMonitor
 <!-- Need to use put_nowait as Tom said. See q.py in zzztestingstuff -->
 investigate read_attribute_asynch functions etc
+Create single attribute ophyd device class
+Why doesn't DevFailed exception when creating device with wrong name stop the program?
 
-Attempted to implement MockDeviceProxy with subscribe_event but asyncio may not be up to the task for it: we need to return a sub_id while also keeping a background thread/process that handles the callback. Maybe a job for run_in_executor but I don't want to spend all my time on this
+<!-- Attempted to implement MockDeviceProxy with subscribe_event but asyncio may not be up to the task for it: we need to return a sub_id while also keeping a background thread/process that handles the callback. Maybe a job for run_in_executor but I don't want to spend all my time on this -->
+At this point would it be better for each of the DeviceProxies to essentially be attribute proxies?
+Maybe DeviceProxies for pipes and configs and AttributeProxies for attributes
+maybe _get_proxy_from_dict returns attribute proxies if there are 3 slashes domain/family/member/attribute and if 2 slashes returns deviceproxy?
+the unique names for attributes should probably inherit from the Python names not the proper Tango names
 
+Need to package together into an actual python package to fix the imports for testing
+Fix pyproject.toml. Fix relative import stuff. ugh
 
 UNIT TEST IDEAS:
 putting a value to an attribute that is beyond the max or min value of the device
