@@ -25,5 +25,6 @@ jobs:
         run: |
           /startsard.sh
           sleep 10
+          python3 exampledevice.py &
           python3 -m unittest test_tango_devices.py
 

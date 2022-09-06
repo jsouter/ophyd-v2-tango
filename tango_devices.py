@@ -3,7 +3,7 @@ from multiprocessing.sharedctypes import Value
 from PyTango.asyncio import AttributeProxy as AsyncAttributeProxy  # type: ignore
 from PyTango.asyncio import DeviceProxy as AsyncDeviceProxy  # type: ignore
 from PyTango import DeviceProxy, DevFailed  # type: ignore
-from PyTango._tango import DevState, AttrQuality, EventType, TimeVal  # type: ignore
+from PyTango._tango import DevState, DevString, AttrQuality, EventType, TimeVal  # type: ignore
 import asyncio
 import re
 import sys
@@ -241,19 +241,26 @@ class TangoPipeR(TangoPipe):
         pipe_data = await self.proxy.read_pipe(self.signal_name)
         print('pipe read does not return timeval, so we add in manually. not ideal!!!')
         print('not sure we should set source as default or use the name of the pipe')
-        return {"value": pipe_data[1], "timestamp": TimeVal().now()}
+        return {"value": pipe_data, "timestamp": TimeVal().now()}
 
     async def get_descriptor(self) -> Descriptor:
         pipe_data = await self.proxy.read_pipe(self.signal_name)
         logging.warning("Reading is a list of dictionaries. Setting json dtype to array, though 'object' is more appropriate")
-        #pipe_data[1] is a list of dictionaries
-        return {"shape": [len(pipe_data[1])],
+        #if we are returning the pipe it is a name and list of blobs, so dimensionality 2
+        return {"shape": [2],
                 "dtype": "array",  # jsonschema types
                 "source": self.source, }
 
     async def get_value(self):
         pipe_data = await self.proxy.read_pipe(self.signal_name)
-        return pipe_data[1]
+        return pipe_data
+
+class TangoPipeW(TangoPipe):
+    async def put(self, value):
+        await self.proxy.write_pipe(self.signal_name, value)
+
+class TangoPipeRW(TangoPipeR, TangoPipeW):
+    ...
 
 
 class TangoComm(Comm):
@@ -419,6 +426,7 @@ class TangoDevice:
         where the first arg is the attribute name as a string and the second arg is the new value of the attribute'''
         logging.warning('Need to implement put for pipes')
         logging.warning('Need to decide whether we look for the Python attribute name or Tango attribute name')
+        logging.warning('single pipe returns empty ordereddicts because we are counting the pipe as a read field not a read_config field')
         if len(args) % 2 != 0:
             raise ArgumentError("configure can not parse an odd number of arguments")
         old_reading = await self.read_configuration()
@@ -467,7 +475,7 @@ class TangoSinglePipeDevice(TangoDevice):
         name = name or dev_name
 
         class SinglePipeComm(TangoComm):
-            pipe: TangoPipeR
+            pipe: TangoPipeRW
 
         @tango_connector
         async def connectpipe(comm: SinglePipeComm):
@@ -647,11 +655,16 @@ def tango_devices_main():
 
     with CommsConnector():
         single = TangoSingleAttributeDevice("motor/motctrl01/1", "Position", "mymotorposition")
-        singlepipe = TangoSinglePipeDevice("how/are/you", "my_pipe", "mypipe")
+        singlepipe = TangoSinglePipeDevice("tango/example/device", "my_pipe", "mypipe")
 
     # RE(count([single]), LiveTable(["mymotorposition"]))
     # RE(count([single, singlepipe]), print)
-    print(call_in_bluesky_event_loop(motor1.configure('velocity',100)))
+    RE(count([singlepipe]), print)
+    # reading = call_in_bluesky_event_loop(q.get())
+    # print(reading)
+    # print(call_in_bluesky_event_loop(motor1.configure('velocity',100)))
+    print(call_in_bluesky_event_loop(singlepipe.configure('pipe',('hello', [{'name': 'test', 'dtype': DevString, 'value': 'yeah cant complain'}, {'name': 'test2', 'dtype': DevString, 'value': 'test2'}]))))
+
 
 
     # single = tango_single_attribute_device("motor/motctrl01/1", "Velocity")

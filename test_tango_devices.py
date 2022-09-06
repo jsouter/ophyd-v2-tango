@@ -1,7 +1,7 @@
 from typing import OrderedDict
 # import sys
 # sys.path.append('../src/tangophyd')
-from tango_devices import TangoSignal, TangoAttr, motor, set_device_proxy_class
+from tango_devices import TangoSignal, TangoAttr, motor, set_device_proxy_class, TangoSinglePipeDevice
 
 import unittest
 import asyncio
@@ -51,8 +51,7 @@ class MotorTestReliesOnSardanaDemo(unittest.IsolatedAsyncioTestCase):
         rand_number = random.random()
         with CommsConnector():
             test_motor = motor(self.dev_name, "test_motor")
-        # call_in_bluesky_event_loop(test_motor.set_config_value_async("velocity", rand_number))
-        test_motor.set_config_value("velocity", rand_number)
+        test_motor.configure("velocity", rand_number)
         #this calls the async version in the bluesky loop
         reading = call_in_bluesky_event_loop(test_motor.read_configuration())
         assert reading["test_motor:Velocity"]['value'] == rand_number
@@ -62,7 +61,7 @@ class MotorTestReliesOnSardanaDemo(unittest.IsolatedAsyncioTestCase):
         rand_number = random.random()
         with CommsConnector():
             test_motor = motor(self.dev_name, "test_motor")
-        self.assertRaises(KeyError, test_motor.set_config_value, "position", rand_number)
+        self.assertRaises(KeyError, test_motor.configure, "position", rand_number)
         #this should complain, can't set slow settable (like a motor) attributes like this
         
 
@@ -81,7 +80,7 @@ class MotorTestReliesOnSardanaDemo(unittest.IsolatedAsyncioTestCase):
         rand_number = random.random() + 1.0
         with CommsConnector():
             test_motor = motor(self.dev_name, "test_motor")
-        test_motor.set_config_value('velocity', 1000)
+        test_motor.configure('velocity', 1000)
         self.RE(bps.mv(test_motor,rand_number))
         
     def test_motor_scans(self):
@@ -96,19 +95,19 @@ class MotorTestReliesOnSardanaDemo(unittest.IsolatedAsyncioTestCase):
     def test_motor_timeout(self):
         with CommsConnector():
             test_motor = motor(self.dev_name, "test_motor")
-        test_motor.set_config_value('velocity', 1000)
+        test_motor.configure('velocity', 1000)
         self.RE(bps.mv(test_motor,0))
         #need a better way to move motor back to 0 position
         #need to find a way to run set in an event loop and not RE?
         test_motor.set_timeout(0.0000001)
-        test_motor.set_config_value('velocity', 0.1)
+        test_motor.configure('velocity', 0.1)
 
         def do_mv():
             rand_number = random.random() + 1.0
             self.RE(bps.mv(test_motor,rand_number))
         
         self.assertRaises(bluesky.utils.FailedStatus, do_mv)
-        test_motor.set_config_value('velocity', 100)
+        test_motor.configure('velocity', 100)
 
         #need to find a better way to specify what exception
 
@@ -121,3 +120,11 @@ class MotorTestMockDeviceProxy(MotorTestReliesOnSardanaDemo):
     @unittest.skip
     def test_motor_timeout(self):
         ...
+
+class ExampleDeviceTests(unittest.IsolatedAsyncioTestCase):
+    RE = RunEngine()
+    async def test_read_pipe(self):
+        with CommsConnector():
+            singlepipe = TangoSinglePipeDevice("tango/example/device", "my_pipe", "mypipe")
+        a = call_in_bluesky_event_loop(singlepipe.read())
+        print(a)
