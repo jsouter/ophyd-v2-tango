@@ -37,7 +37,7 @@ class MockDeviceProxy:
         print('setting to 10000 to test. prob a better way to do this')
         self._host = os.uname().nodename
         future = asyncio.Future()
-        if self._name == "my/device/name":
+        if self._name == "mock/device/name":
             future.set_result(self)
         else:
             print(f"No Device named {self._name} found. Must be a better way to do this than printing")
@@ -189,7 +189,7 @@ class MockDeviceProxy:
 
 async def mockproxymain1():
     global m
-    m = await MockDeviceProxy("my/device/name")
+    m = await MockDeviceProxy("mock/device/name")
     # print(await d.read_attribute("Position"))
     # print(await d.read_attribute("Position"))
 
@@ -246,7 +246,7 @@ def mockproxymain2():
     print(f"device proxy class is set to : {get_device_proxy_class()}")
 
     with CommsConnector():
-        b = motor("my/device/name", "b")
+        b = motor("mock/device/name", "b")
     # print(call_in_bluesky_event_loop(b.describe()))
     #dev_attr is getting set but maybe ophyd doesn't know what to do with dev_attrs? it should do!
     # RE(bps.rd(b), LiveTable(["b:Position"]))
@@ -257,6 +257,8 @@ def mockproxymain2():
         print(f"printing the thing: {doc}")
         
     # call_in_bluesky_event_loop(b.comm.position.proxy.subscribe_event("Position", EventType.CHANGE_EVENT, print2))
+    RE(bps.mv(b, 5))
+    #why cant we use bluesky mv on the device using mock device proxy?
     RE(scan([],b,0,1,3), LiveTable(["b:Position"]))
 
 

@@ -565,7 +565,7 @@ async def motorconnector(comm: TangoMotorComm):
         comm.velocity.connect(comm.dev_name, "Velocity"),
         comm.state.connect(comm.dev_name, "State"),
     )
-    # await ConnectTheRest(comm)
+    await ConnectTheRest(comm)
 
 
 def motor(dev_name: str, ophyd_name: Optional[str] = None):
@@ -627,7 +627,8 @@ def main():
             RE(scan([],*scan_args,11), LiveTable(table_args))
             # RE(scan([], *scan_args, 11))
             print('scan' + str(i+1), time.time() - thetime)
-    scan1()
+    # scan1()
+
 
     # print('with 2 motors:')
     # for i in range(10):
