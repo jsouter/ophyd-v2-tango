@@ -614,11 +614,11 @@ def tango_devices_main():
         motors = [motor1, motor2, motor3, motor4]
 
     from cbtest import mycallback
-
+    print(call_in_bluesky_event_loop(motor1.read_configuration()))
     def scan1():
         velocity = 1000
         for m in motors:
-            m.set_config_value('velocity', velocity)
+            call_in_bluesky_event_loop(m.configure('velocity', velocity))
             # m.set_timeout(0.0001)
         for i in range(4):
             scan_args = []
@@ -652,18 +652,32 @@ def tango_devices_main():
             RE(count(scan_args,11))
             print('count' +str(i+1),time.time() - thetime)
     
+    # scan1()
+    # scan2()
 
     with CommsConnector():
         single = TangoSingleAttributeDevice("motor/motctrl01/1", "Position", "mymotorposition")
         singlepipe = TangoSinglePipeDevice("tango/example/device", "my_pipe", "mypipe")
 
+
     # RE(count([single]), LiveTable(["mymotorposition"]))
     # RE(count([single, singlepipe]), print)
-    RE(count([singlepipe]), print)
+    # RE(count([singlepipe]), print)
     # reading = call_in_bluesky_event_loop(q.get())
     # print(reading)
     # print(call_in_bluesky_event_loop(motor1.configure('velocity',100)))
-    print(call_in_bluesky_event_loop(singlepipe.configure('pipe',('hello', [{'name': 'test', 'dtype': DevString, 'value': 'yeah cant complain'}, {'name': 'test2', 'dtype': DevString, 'value': 'test2'}]))))
+
+    async def check_pipe_configured():
+        reading = await singlepipe.read()
+        print(reading)
+        await singlepipe.configure('pipe',('hello', [{'name': 'test', 'dtype': DevString, 'value': 'how are you'}, {'name': 'test2', 'dtype': DevString, 'value': 'test2'}]))
+        reading = await singlepipe.read()
+        print(reading)
+        await singlepipe.configure('pipe',('hello', [{'name': 'test', 'dtype': DevString, 'value': 'yeah cant complain'}, {'name': 'test2', 'dtype': DevString, 'value': 'test2'}]))
+        reading = await singlepipe.read()
+        print(reading)
+    # call_in_bluesky_event_loop(check_pipe_configured())
+    
 
 
 
@@ -674,7 +688,6 @@ if __name__ in "__main__":
     from bluesky.plans import count
     from bluesky.callbacks import LiveTable
     from ophyd.v2.core import CommsConnector
-
     # python3 -m cProfile -o test.prof tango_devices.py
     # snakeviz test.prof
     # import cProfile
