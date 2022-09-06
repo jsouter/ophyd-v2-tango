@@ -25,6 +25,9 @@ investigate read_attribute_asynch functions etc
 Create single attribute ophyd device class
 Why doesn't DevFailed exception when creating device with wrong name stop the program?
 
+Change monitor_reading to use Monitor object with close method. See close_monitor_2 etc
+Fix the np.float64 thing in dtype needed to fix the mockproxy thing
+
 <!-- Attempted to implement MockDeviceProxy with subscribe_event but asyncio may not be up to the task for it: we need to return a sub_id while also keeping a background thread/process that handles the callback. Maybe a job for run_in_executor but I don't want to spend all my time on this -->
 At this point would it be better for each of the DeviceProxies to essentially be attribute proxies?
 Maybe DeviceProxies for pipes and configs and AttributeProxies for attributes

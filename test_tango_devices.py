@@ -1,7 +1,7 @@
 from typing import OrderedDict
 # import sys
 # sys.path.append('../src/tangophyd')
-from .tango_devices import TangoSignal, TangoAttr, motor
+from tango_devices import TangoSignal, TangoAttr, motor
 
 import unittest
 import asyncio

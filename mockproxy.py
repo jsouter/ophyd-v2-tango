@@ -1,7 +1,5 @@
 from multiprocessing.sharedctypes import Value
-from re import M
-from this import d
-from PyTango import DeviceAttribute, TimeVal, AttributeInfoEx
+from PyTango import DeviceAttribute, TimeVal, AttributeInfoEx, EventData
 from typing import List, Dict
 from PyTango.asyncio import DeviceProxy
 from PyTango._tango import AttrDataFormat, AttrQuality, EventType
@@ -13,9 +11,12 @@ import multiprocessing
 import threading
 
 
+
+
 _global_sub_count = 0
 
 class MockDeviceProxy:
+    print('only works for scalar attr right now')
     #look into how "Mocks" work
     #how do we make it so that calling returns a coroutine?
     _name: str
@@ -57,7 +58,6 @@ class MockDeviceProxy:
     async def read_pipe(self, pipe: str):
         pass
     async def write_attribute(self, attribute: str, value):
-        print('only works for scalar attr right now')
         config = self.get_attribute_config(attribute)
         if config.min_value not in ('', 'Not specified'):
             if value < float(config.min_value):
@@ -105,7 +105,17 @@ class MockDeviceProxy:
             # dev_attr.nb_read = 1
         dev_attr.time = TimeVal().now()
         return dev_attr
+    
+    def create_event_data(self, reading):
+        event = EventData()
+        event.reception_data = TimeVal().now()
+        event.event = 'change'
+        event.attr_name = 'ADD THIS IN LATER'
+        event.attr_value = reading
+        return event
+
     async def subscribe_event(self, attr_name, event_type, callback):
+        # print('Need to return an EventData object containing an attr_value= DeviceAttribute field. Easy enough!')
         #hasnt been tested yet, also need to make sure the sub is
         #running in a seperate process so that the function can return the sub id
         if event_type != EventType.CHANGE_EVENT:
@@ -116,42 +126,44 @@ class MockDeviceProxy:
         sub_id = _global_sub_count
         self._active_subscriptions.append(sub_id)
         async def sub_loop():
-            print('loop started')
+            # print('loop started')
             last_reading = self._read_attribute_sync(attr_name)
             callback(last_reading)
-            print(f'callback run for first time for sub {sub_id}')
             while True:
                 # print(sub_id, self._active_subscriptions)
                 new_reading = self._read_attribute_sync(attr_name)
                 if hasattr(new_reading, 'value'):
                     if not hasattr(last_reading, 'value'):
-                        print('new reading has value, last doesnt')
+                        # print('new reading has value, last doesnt')
                         break
                     elif new_reading.value != last_reading.value:
                         callback(new_reading)
-                        print(f'callback run again for sub {sub_id}')
+                        # print(f'callback run again for sub {sub_id}')
                 if sub_id not in self._active_subscriptions:
                     break
                 last_reading = new_reading
-            print("while loop broken")
+            # print("while loop broken")
         def sub_loop_sync(proxy):
-            print('loop started')
+            # print('loop started')
             last_reading = proxy._read_attribute_sync(attr_name)
             if not hasattr(last_reading, 'value'):
                 last_reading.value = None
             last_value = last_reading.value
-            callback(last_reading)
-            print(f'callback run for first time for sub {sub_id}')
+            callback(self.create_event_data(last_reading))
+            # print(f"event_data is {self.create_event_data(last_reading)}")
+            # print(f'callback run for first time for sub {sub_id}')
             while True:
                 new_reading = proxy._read_attribute_sync(attr_name)
                 if not hasattr(new_reading, 'value'):
                     new_reading.value = None
-                #the issue arises because of the way I am caching the DeviceAttributes. all my own fault!!! haha :)
                 if new_reading.value != last_value:
-                    print('Different!')
-                    callback(new_reading)
+                    # print('Different!')
+                    # callback(new_reading)
+                    # print(f"reading is {new_reading}")
+                    callback(self.create_event_data(new_reading))
+                    # print(f"event_data is {self.create_event_data(new_reading)}")
                 elif sub_id not in proxy._active_subscriptions:
-                    print(f'sub_id {sub_id} gone.')
+                    # print(f'sub_id {sub_id} gone.')
                     return
                 last_reading = new_reading
                 last_value = new_reading.value # janky but it stops caching error
@@ -162,20 +174,20 @@ class MockDeviceProxy:
         # loop.create_task(sub_loop())
         # p = threading.Thread(target=sub_loop_sync)
         # p.start()
-        print(f"sub_id is {sub_id} in fn")
+        # print(f"sub_id is {sub_id} in fn")
         #for some reason using await in the task breaks the loop, so we have avoided it using sync methods. bit dodgy
         return sub_id
     def unsubscribe_event(self, sub_id):
-        print('Doing a dodgy sync thing to keep the sub going but maybe thats fine')
+        # print('Doing a dodgy sync thing to keep the sub going but maybe thats fine')
         self._active_subscriptions.remove(sub_id)
-        print(self._active_subscriptions)
+        # print(self._active_subscriptions)
     def __repr__(self):
         return self._class+"("+self.name()+")"
     def __str__(self):
         return self.__repr__()
 
 
-async def mockproxymain():
+async def mockproxymain1():
     global m
     m = await MockDeviceProxy("my/device/name")
     # print(await d.read_attribute("Position"))
@@ -202,7 +214,7 @@ async def mockproxymain():
         val1 = (await q1.get()).value
         val2 = (await q2.get()).value
         print(val1,val2)
-        if val2 > 0.9:
+        if val2 > 0.7:
             print('too far, lets break this loop!')
             m.unsubscribe_event(sub1)
             m.unsubscribe_event(sub2)
@@ -218,9 +230,42 @@ async def mockproxymain():
     #with multiprocessing both loops start but the q1.get() never finishes waiting. idk why...
 
 
+def mockproxymain2():
+    from tango_devices import motor, get_device_proxy_class, set_device_proxy_class
+    from ophyd.v2.core import CommsConnector
+    from bluesky import RunEngine
+    import bluesky.plan_stubs as bps
+    from bluesky.plans import count, scan
+    from bluesky.callbacks import LiveTable
+    from bluesky.run_engine import call_in_bluesky_event_loop
+    from PyTango import DeviceProxy as TestDeviceProxy
+    RE=RunEngine()
+
+    
+    set_device_proxy_class(MockDeviceProxy)
+    print(f"device proxy class is set to : {get_device_proxy_class()}")
+
+    with CommsConnector():
+        b = motor("my/device/name", "b")
+    # print(call_in_bluesky_event_loop(b.describe()))
+    #dev_attr is getting set but maybe ophyd doesn't know what to do with dev_attrs? it should do!
+    # RE(bps.rd(b), LiveTable(["b:Position"]))
+
+    # print(TestDeviceProxy("motor/motctrl01/1").read_attribute("Position"))
+    RE(count([b],1), LiveTable(["b:Position"]))
+    def print2(doc):
+        print(f"printing the thing: {doc}")
+        
+    # call_in_bluesky_event_loop(b.comm.position.proxy.subscribe_event("Position", EventType.CHANGE_EVENT, print2))
+    RE(scan([],b,0,1,3), LiveTable(["b:Position"]))
+
+
+    
 
 if __name__ in "__main__":
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(mockproxymain())
+
+    # loop = asyncio.get_event_loop()
+    # loop.run_until_complete(mockproxymain1())
+    mockproxymain2()
     # print(d)
     # print(m)
