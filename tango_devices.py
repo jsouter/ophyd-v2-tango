@@ -48,7 +48,6 @@ _tango_dev_proxies: Dict[str, AsyncDeviceProxy] = {}
 # print('or maybe its sufficient to just change the value of self.proxy')
 
 _device_proxy_class = AsyncDeviceProxy
-
 def set_device_proxy_class(klass):
     global _device_proxy_class
     if klass == AsyncDeviceProxy or MockDeviceProxy:
@@ -109,7 +108,6 @@ class TangoAttr(TangoSignal):
             self.dev_name = dev_name
             self.signal_name = attr
             self.proxy = await _get_proxy_from_dict(self.dev_name)
-            # self.sync_proxy = DeviceProxy(self.dev_name)
             try:
                 await self.proxy.read_attribute(attr)
             except:
@@ -191,17 +189,6 @@ class TangoAttrR(TangoAttr, SignalR):
         attr_data = await self.proxy.read_attribute(self.signal_name)
         return attr_data.value
 
-    # def sync_get_reading(self):
-    #     attr_data = self.sync_proxy.read_attribute(self.signal_name)
-    #     return {"value": attr_data.value, "timestamp": attr_data.time.totime()}
-
-    # def sync_get_descriptor(self):
-    #     attr_data = self.sync_proxy.read_attribute(self.signal_name)
-    #     return {"shape": self._get_shape(attr_data),
-    #             "dtype": _get_dtype(attr_data),  # jsonschema types
-    #             "source": self.source, }
-
-
 
 class TangoAttrW(TangoAttr, SignalW):
     latest_quality = None
@@ -212,17 +199,7 @@ class TangoAttrW(TangoAttr, SignalW):
     async def get_quality(self):
         reading = await self.proxy.read_attribute(self.signal_name)
         return reading.quality
-
-    # def sync_wait_for_valid_quality(self):
-    #     def record_quality(doc):
-    #         self.latest_quality = doc.attr_value.quality
-    #     sub = self.sync_proxy.subscribe_event(
-    #         self.signal_name, EventType.CHANGE_EVENT, record_quality)
-    #     while True:
-    #         if self.latest_quality == AttrQuality.ATTR_VALID:
-    #             self.sync_proxy.unsubscribe_event(sub)
-    #             return
-                
+               
     async def wait_for_not_moving(self):
         event = asyncio.Event()
         def set_event(reading):
@@ -324,8 +301,6 @@ class ConnectTheRest:
         if not self.signals:  # if dict empty
             return
         self.proxy = await _get_proxy_from_dict(comm.dev_name)
-        # self.sync_proxy = DeviceProxy(comm.dev_name)
-        # print('Adding sync_proxy in ConnectTheRest')
         self.coros: List[Coroutine] = []
         self.guesses: Dict[str, Dict[str, str]] = {}
         self.signal_types = {'attribute':   {'baseclass': TangoAttr,
@@ -413,21 +388,6 @@ class TangoDevice:
             od[name] = description
         return od
 
-    def sync_read(self, *to_read):
-        od = OrderedDict()
-        for attr in to_read:
-            reading = attr.sync_get_reading()
-            name = self.name + ':' + attr.signal_name
-            od[name] = reading
-        return od
-
-    def sync_describe(self, *to_desc):
-        od = OrderedDict()
-        for attr in to_desc:
-            description = attr.sync_get_descriptor()
-            name = self.name + ':' + attr.signal_name
-            od[name] = description
-        return od
     async def set_config_value_async(self, attr_name: str, value):
         attr: TangoAttrRW = getattr(self.comm, attr_name)
         await attr.put(value)
@@ -436,41 +396,46 @@ class TangoDevice:
         call_in_bluesky_event_loop(
             self.set_config_value_async(attr_name, value))
 
-
-
 class TangoMotorComm(TangoComm):
     position: TangoAttrRW
     velocity: TangoAttrRW
     state: TangoAttrRW
     stop: TangoCommand
 
-# class TangoSingleAttributeComm(TangoComm):
-#     attribute: TangoAttr
+class TangoSingleAttributeDevice(TangoDevice):
+    def __init__(self, dev_name, attr_name, name: Optional[str] = None):
+        name = name or dev_name
+        async def connectsingleattribute(comm):
+            print('connectsingleattribute called')
+            await comm.attribute.connect(dev_name, attr_name)
+        class SingleComm(TangoComm):
+            attribute: TangoAttrRW
+            def __init__(self, dev_name: str):
+                self.proxy: AsyncDeviceProxy  # should be set by a tangoconnector
+                self.dev_name = dev_name
+                self._signals_ = make_tango_signals(self)
+                CommsConnector.schedule_connect(self)
+            async def _connect_(self):
+                await self.attribute.connect(dev_name, attr_name)
 
-# class TangoSingleAttributeDevice(TangoDevice):
-#     comm: TangoSingleAttributeComm
-#     async def read(self):
-#         return await self._read(self.comm.attribute)
+        self.comm = SingleComm(dev_name)
+        super().__init__(self.comm, name)
 
-#     async def describe(self):
-#         return await self._describe(self.comm.attribute)
+    async def read(self):
+        reading = await self.comm.attribute.get_reading()
+        return OrderedDict({self.name:reading})
 
-#     async def read_configuration(self):
-#         return await self._read()
+    async def describe(self):
+        descriptor = await self.comm.attribute.get_descriptor()
+        return OrderedDict({self.name:descriptor})
 
-#     async def describe_configuration(self):
-#         return await self._describe()
+    async def read_configuration(self):
+        return await self._read()
 
-# @tango_connector
-# async def singleattributeconnector(comm: TangoMotorComm, attr_name):
-#     await asyncio.gather(
-#         comm.attribute.connect(comm.dev_name, "attr_name"),
-#     )
+    async def describe_configuration(self):
+        return await self._describe()
 
-# def tango_single_attribute_device(dev_name: str, attr_name: str, ophyd_name: Optional[str] = None):
-#     ophyd_name = ophyd_name or re.sub(r'[^a-zA-Z\d]', '-', dev_name)
-#     c = TangoSingleAttributeComm(dev_name, attr_name)
-#     return TangoSingleAttributeDevice(c, ophyd_name)
+
 
 class TangoMotor(TangoDevice):
     comm: TangoMotorComm # satisfies type checker
@@ -537,20 +502,6 @@ class TangoMotor(TangoDevice):
         return status
 
 
-class SyncTangoMotor(TangoMotor):
-    def read(self):
-        return self.sync_read(self.comm.position)
-
-    def describe(self):
-        return self.sync_describe(self.comm.position)
-
-
-
-# def get_attrs_from_hints(comm: TangoComm):
-#     hints = get_type_hints(comm)
-#     return {signal_name: getattr(comm, signal_name) for signal_name in hints}
-
-
 def make_tango_signals(comm: TangoComm):
     hints = get_type_hints(comm)  # dictionary of names and types
     for signal_name in hints:
@@ -573,14 +524,8 @@ def motor(dev_name: str, ophyd_name: Optional[str] = None):
     c = TangoMotorComm(dev_name)
     return TangoMotor(c, ophyd_name)
 
-
-def syncmotor(dev_name: str, ophyd_name: str):
-    c = TangoMotorComm(dev_name)
-    return SyncTangoMotor(c, ophyd_name)
-
-
 # if __name__ == "__main__":
-def main():
+def tango_devices_main():
     from bluesky.run_engine import get_bluesky_event_loop
     from bluesky.run_engine import RunEngine
     from bluesky.plans import count, scan
@@ -598,12 +543,6 @@ def main():
 
     RE = RunEngine({})
     with CommsConnector():
-        # a = TangoDevice(TangoMotorComm("helpme"))
-        # print(f"a is {a}")
-        # motor1 = syncmotor("motor/motctrl01/1", "motor1")
-        # motor2 = syncmotor("motor/motctrl01/2", "motor2")
-        # motor3 = syncmotor("motor/motctrl01/3", "motor3")
-        # motor4 = syncmotor("motor/motctrl01/4", "motor4")
         motor1 = motor("motor/motctrl01/1", "motor1")
         motor2 = motor("motor/motctrl01/2", "motor2")
         motor3 = motor("motor/motctrl01/3", "motor3")
@@ -627,37 +566,37 @@ def main():
             RE(scan([],*scan_args,11), LiveTable(table_args))
             # RE(scan([], *scan_args, 11))
             print('scan' + str(i+1), time.time() - thetime)
-    # scan1()
-
-
-    # print('with 2 motors:')
-    # for i in range(10):
-    #     thetime = time.time()
-    #     RE(scan([],motor1,0,1,motor2,0,1,10*i+1))
-    #     print('steps' +str(10*i+1),time.time() - thetime)
-    # print('with 4 motors:')
-    # for i in range(10):
-    #     thetime = time.time()
-    #     RE(scan([],motor1,0,1,motor2,0,1,motor3,0,1,motor4,0,1,10*i+1))
-    #     print('steps' +str(10*i+1),time.time() - thetime)
-    # for i in range(4):
-    #     scan_args = []
-    #     table_args = []
-    #     for j in range(i+1):
-    #         scan_args += [motors[j]]
-    #         table_args += ['motor'+str(j+1)+':Position']
-    #     thetime = time.time()
-    #     # RE(count(scan_args,11), LiveTable(table_args))
-    #     RE(count(scan_args,11))
-    #     print('count' +str(i+1),time.time() - thetime)
-
-    # RE(scan([],motor1,0,1,motor2,10,101,11), mycallback(['motor1:Position', 'motor2:Position']))
-
+    def scan2():
+        print('with 2 motors:')
+        for i in range(10):
+            thetime = time.time()
+            RE(scan([],motor1,0,1,motor2,0,1,10*i+1))
+            print('steps' +str(10*i+1),time.time() - thetime)
+        print('with 4 motors:')
+        for i in range(10):
+            thetime = time.time()
+            RE(scan([],motor1,0,1,motor2,0,1,motor3,0,1,motor4,0,1,10*i+1))
+            print('steps' +str(10*i+1),time.time() - thetime)
+        for i in range(4):
+            scan_args = []
+            table_args = []
+            for j in range(i+1):
+                scan_args += [motors[j]]
+                table_args += ['motor'+str(j+1)+':Position']
+            thetime = time.time()
+            # RE(count(scan_args,11), LiveTable(table_args))
+            RE(count(scan_args,11))
+            print('count' +str(i+1),time.time() - thetime)
     
+
+    with CommsConnector():
+        single = TangoSingleAttributeDevice("motor/motctrl01/1", "Position", "mymotorposition")
+    # print(dir(single.comm.attribute))
+    RE(count([single]), LiveTable(["mymotorposition"]))
     # single = tango_single_attribute_device("motor/motctrl01/1", "Velocity")
 
 if __name__ in "__main__":
-    main()
+    tango_devices_main()
     from bluesky.plans import count
     from bluesky.callbacks import LiveTable
     from ophyd.v2.core import CommsConnector
