@@ -1,16 +1,16 @@
 Add exception case to wait_for_not_moving for when the state is e.g. in alarm state, right now it only check if not moving
-Rewrite TangoSignal etc to derive from the ophyd Signal classes
+<!-- Rewrite TangoSignal etc to derive from the ophyd Signal classes -->
 implement observe monitor member functions etc
 More rigorous testing about async vs sync green mode overhead
 Rewrite ConnectTheRest to be callable as a function as type-checkable. Tom recommends implementing as a function and instatiating a class instance if required. Says he only implemented the protocol EpicsConnector for type checking reasons.
 Implement other connectors I haven't rewritten yet
 Write unit tests that utilise real (no hardware but actually running on Tango) devices 
-Write class to mock output of AsyncDeviceProxy for unit tests.
-Cleanup sync proxy remnants. Ctrl+F for "sync"
+<!-- Write class to mock output of AsyncDeviceProxy for unit tests. -->
+<!-- Cleanup sync proxy remnants. Ctrl+F for "sync" -->
 <!-- Change type hint for get_tango_connector to be TangoConnector -->
 Consider if there is a better way to implement _get_dtype
 <!-- How do we implement "source" for commands and pipes? These need not have unique names, can have an attr+command with same name -->
-Implement DISCONNECTED_ERROR for tango 
+Implement DISCONNECTED_ERROR for tango
 Use Reading and Descriptor type hints from protocols.py
 Decide how to handle raised Exceptions. Specify exceptions more
 TangoAttr.connect(): what exception type?
@@ -30,6 +30,9 @@ Fix the np.float64 thing in dtype needed to fix the mockproxy thing
 fix connecttherest to work with mock class
 Need to rethink how the bluesky signal names should be written, especially for single attribute etc
 HOW DO WE DESIGNATE BETWEEN SETTING (MOTORSTYLE) AND WRITING TO VALUES IMMEDIATELY?
+
+https://nsls-ii.github.io/bluesky/hardware.html Devices may have subscribe, clear sub methods
+We should do all the setting of velocity etc using the configure. Returns old and new read_configuration
 
 <!-- Attempted to implement MockDeviceProxy with subscribe_event but asyncio may not be up to the task for it: we need to return a sub_id while also keeping a background thread/process that handles the callback. Maybe a job for run_in_executor but I don't want to spend all my time on this -->
 At this point would it be better for each of the DeviceProxies to essentially be attribute proxies?

@@ -1,12 +1,14 @@
+from argparse import ArgumentError
 from multiprocessing.sharedctypes import Value
 from PyTango.asyncio import AttributeProxy as AsyncAttributeProxy  # type: ignore
 from PyTango.asyncio import DeviceProxy as AsyncDeviceProxy  # type: ignore
 from PyTango import DeviceProxy, DevFailed  # type: ignore
-from PyTango._tango import DevState, AttrQuality, EventType  # type: ignore
+from PyTango._tango import DevState, AttrQuality, EventType, TimeVal  # type: ignore
 import asyncio
 import re
 import sys
 from ophyd.v2.core import AsyncStatus  # type: ignore
+import logging
 
 from typing import Callable, Generic, TypeVar, get_type_hints, Dict, Protocol, Union, Type, Coroutine, List, Any, Optional
 from ophyd.v2.core import CommsConnector
@@ -21,7 +23,6 @@ from mockproxy import MockDeviceProxy
 import numpy as np
 
 # from mockproxy import MockDeviceProxy
-
 
 def _get_dtype(attribute) -> Dtype:
     # https://pytango.readthedocs.io/en/v9.3.4/data_types.html
@@ -91,17 +92,21 @@ class TangoSignal(Signal):
     def source(self) -> str:
         # print(f"source called for {self.dev_name}:{self.signal_name}")
         if not self._source:
-            self._source = (f'tango://{self.proxy.get_db_host()}:'
-                            f'{self.proxy.get_db_port()}/'
-                            f'{self.dev_name}/{self.signal_name}')
-            if isinstance(self, TangoPipe):
-                self._source += '(Pipe)'
+            prefix = (f'tango://{self.proxy.get_db_host()}:'
+                            f'{self.proxy.get_db_port()}/')
+            if isinstance(self, TangoAttr):
+                self._source = prefix + f'{self.dev_name}/{self.signal_name}'
+            elif isinstance(self, TangoPipe):
+                self._source = prefix + f'{self.dev_name}:{self.signal_name}(Pipe)'
             elif isinstance(self, TangoCommand):
-                self._source += '(Command)'
+                self._source = prefix + f'{self.dev_name}:{self.signal_name}(Command)'
+            else:
+                raise TypeError(f'Can\'t determine source of TangoSignal object of class {self.__class__}')
         return self._source
 
 
 class TangoAttr(TangoSignal):
+    logging.warning('Have only tested attributes with scalar data so far')
     async def connect(self, dev_name: str, attr: str):
         '''Should set the member variables proxy and signal_name. May be called when no other connector used to connect signals'''
         if not self.connected:
@@ -116,25 +121,10 @@ class TangoAttr(TangoSignal):
 
 
 
-# def tango_observe_monitor(subscription_id):
-
-# class TangoMonitor: # this should probably inherit from Monitor Protocol but that is namespaced behind epics
-#     async def __call__(self, signal: TangoSignal, callback):
-#         self.sub_id = await signal.proxy.subscribe_event(signal.signal_name, EventType.CHANGE_EVENT, callback)
-#         self.unsub_coro = signal.proxy.unsubscribe_event(self.sub_id)
-#     async def close(self):
-#         await self.unsub_coro
-
-
-class TangoMonitor: # need to type hint this, inherit properly etc
-    def __init__(self, callback):
-        self.callback = callback
-    
-
-
+class TangoMonitor:
+    logging.warning('Have to write Tango Monitor class')
 
 class TangoAttrR(TangoAttr, SignalR):
-    print('Need to rewrite monitor_reading to use Monitor objects')
     async def monitor_reading(self, callback):
         # print('in observe reading')
         sub_id = await self.proxy.subscribe_event(self.signal_name, EventType.CHANGE_EVENT, callback)
@@ -192,7 +182,7 @@ class TangoAttrR(TangoAttr, SignalR):
 
 class TangoAttrW(TangoAttr, SignalW):
     latest_quality = None
-
+    logging.warning('wait_for_not_moving may be deprecated')
     async def put(self, value):
         await self.proxy.write_attribute(self.signal_name, value)
 
@@ -245,6 +235,25 @@ class TangoPipe(TangoSignal):
             except:
                 raise Exception(f"Couldn't read pipe {self.signal_name}")
             self._connected = True
+
+class TangoPipeR(TangoPipe):
+    async def get_reading(self) -> Reading:
+        pipe_data = await self.proxy.read_pipe(self.signal_name)
+        print('pipe read does not return timeval, so we add in manually. not ideal!!!')
+        print('not sure we should set source as default or use the name of the pipe')
+        return {"value": pipe_data[1], "timestamp": TimeVal().now()}
+
+    async def get_descriptor(self) -> Descriptor:
+        pipe_data = await self.proxy.read_pipe(self.signal_name)
+        logging.warning("Reading is a list of dictionaries. Setting json dtype to array, though 'object' is more appropriate")
+        #pipe_data[1] is a list of dictionaries
+        return {"shape": [len(pipe_data[1])],
+                "dtype": "array",  # jsonschema types
+                "source": self.source, }
+
+    async def get_value(self):
+        pipe_data = await self.proxy.read_pipe(self.signal_name)
+        return pipe_data[1]
 
 
 class TangoComm(Comm):
@@ -388,13 +397,36 @@ class TangoDevice:
             od[name] = description
         return od
 
-    async def set_config_value_async(self, attr_name: str, value):
-        attr: TangoAttrRW = getattr(self.comm, attr_name)
-        await attr.put(value)
+    @abstractmethod
+    async def read(self):
+        ...
 
-    def set_config_value(self, attr_name: str, value):
-        call_in_bluesky_event_loop(
-            self.set_config_value_async(attr_name, value))
+    @abstractmethod
+    async def describe(self):
+        ...
+
+    @abstractmethod
+    async def read_configuration(self):
+        ...
+
+    @abstractmethod
+    async def describe_configuration(self):
+        ...
+
+    async def configure(self, *args):
+    
+        '''Returns old result of read_configuration and new result of read_configuration. Pass an arbitrary number of pairs of args
+        where the first arg is the attribute name as a string and the second arg is the new value of the attribute'''
+        logging.warning('Need to implement put for pipes')
+        logging.warning('Need to decide whether we look for the Python attribute name or Tango attribute name')
+        if len(args) % 2 != 0:
+            raise ArgumentError("configure can not parse an odd number of arguments")
+        old_reading = await self.read_configuration()
+        for attr_name, value in zip(args[0::2], args[1::2]):
+            attr = getattr(self.comm, attr_name)
+            await attr.put(value)
+        new_reading = await self.read_configuration()
+        return old_reading, new_reading
 
 class TangoMotorComm(TangoComm):
     position: TangoAttrRW
@@ -405,18 +437,13 @@ class TangoMotorComm(TangoComm):
 class TangoSingleAttributeDevice(TangoDevice):
     def __init__(self, dev_name, attr_name, name: Optional[str] = None):
         name = name or dev_name
-        async def connectsingleattribute(comm):
-            print('connectsingleattribute called')
-            await comm.attribute.connect(dev_name, attr_name)
+
         class SingleComm(TangoComm):
             attribute: TangoAttrRW
-            def __init__(self, dev_name: str):
-                self.proxy: AsyncDeviceProxy  # should be set by a tangoconnector
-                self.dev_name = dev_name
-                self._signals_ = make_tango_signals(self)
-                CommsConnector.schedule_connect(self)
-            async def _connect_(self):
-                await self.attribute.connect(dev_name, attr_name)
+
+        @tango_connector
+        async def connectattribute(comm: SingleComm):
+            await comm.attribute.connect(dev_name, attr_name)
 
         self.comm = SingleComm(dev_name)
         super().__init__(self.comm, name)
@@ -435,7 +462,33 @@ class TangoSingleAttributeDevice(TangoDevice):
     async def describe_configuration(self):
         return await self._describe()
 
+class TangoSinglePipeDevice(TangoDevice):
+    def __init__(self, dev_name, attr_name, name: Optional[str] = None):
+        name = name or dev_name
 
+        class SinglePipeComm(TangoComm):
+            pipe: TangoPipeR
+
+        @tango_connector
+        async def connectpipe(comm: SinglePipeComm):
+            await comm.pipe.connect(dev_name, attr_name)
+
+        self.comm = SinglePipeComm(dev_name)
+        super().__init__(self.comm, name)
+
+    async def read(self):
+        reading = await self.comm.pipe.get_reading()
+        return OrderedDict({self.name:reading})
+
+    async def describe(self):
+        descriptor = await self.comm.pipe.get_descriptor()
+        return OrderedDict({self.name:descriptor})
+
+    async def read_configuration(self):
+        return await self._read()
+
+    async def describe_configuration(self):
+        return await self._describe()
 
 class TangoMotor(TangoDevice):
     comm: TangoMotorComm # satisfies type checker
@@ -524,6 +577,9 @@ def motor(dev_name: str, ophyd_name: Optional[str] = None):
     c = TangoMotorComm(dev_name)
     return TangoMotor(c, ophyd_name)
 
+
+
+
 # if __name__ == "__main__":
 def tango_devices_main():
     from bluesky.run_engine import get_bluesky_event_loop
@@ -591,8 +647,13 @@ def tango_devices_main():
 
     with CommsConnector():
         single = TangoSingleAttributeDevice("motor/motctrl01/1", "Position", "mymotorposition")
-    # print(dir(single.comm.attribute))
-    RE(count([single]), LiveTable(["mymotorposition"]))
+        singlepipe = TangoSinglePipeDevice("how/are/you", "my_pipe", "mypipe")
+
+    # RE(count([single]), LiveTable(["mymotorposition"]))
+    # RE(count([single, singlepipe]), print)
+    print(call_in_bluesky_event_loop(motor1.configure('velocity',100)))
+
+
     # single = tango_single_attribute_device("motor/motctrl01/1", "Velocity")
 
 if __name__ in "__main__":

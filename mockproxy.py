@@ -16,7 +16,6 @@ import threading
 _global_sub_count = 0
 
 class MockDeviceProxy:
-    print('only works for scalar attr right now')
     #look into how "Mocks" work
     #how do we make it so that calling returns a coroutine?
     _name: str
