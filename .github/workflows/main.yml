@@ -26,5 +26,7 @@ jobs:
           /startsard.sh
           sleep 10
           python3 exampledevice.py &
-          python3 -m unittest test_tango_devices.py
+          python3 -m unittest test_with_dev_proxy.py
+          python3 -m unittest test_with_mock_proxy.py
+
 

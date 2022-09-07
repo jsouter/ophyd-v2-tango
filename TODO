@@ -31,6 +31,10 @@ fix connecttherest to work with mock class
 Need to rethink how the bluesky signal names should be written, especially for single attribute etc
 HOW DO WE DESIGNATE BETWEEN SETTING (MOTORSTYLE) AND WRITING TO VALUES IMMEDIATELY?
 
+Should probably try and write my own error names
+
+try to make it so that the proxy of each signal is a pointer to the same object.
+
 https://nsls-ii.github.io/bluesky/hardware.html Devices may have subscribe, clear sub methods
 We should do all the setting of velocity etc using the configure. Returns old and new read_configuration
 
@@ -40,8 +44,8 @@ Maybe DeviceProxies for pipes and configs and AttributeProxies for attributes
 maybe _get_proxy_from_dict returns attribute proxies if there are 3 slashes domain/family/member/attribute and if 2 slashes returns deviceproxy?
 the unique names for attributes should probably inherit from the Python names not the proper Tango names
 
-Need to package together into an actual python package to fix the imports for testing
-Fix pyproject.toml. Fix relative import stuff. ugh
+Rethink how monitor_reading and monitor_value should work..
+
 
 UNIT TEST IDEAS:
 putting a value to an attribute that is beyond the max or min value of the device
@@ -49,3 +53,4 @@ Setting velocity to zero and waiting for timeout
 asserting that we can pass Tango device to built in callbacks (not yet implemented)
 assert dtype of descriptor is correct
 ensure that async put and reads are non blocking
+unit tests with the RunEngine are very difficult. I can not figure out how to delete the RunEngine and then restart it..
