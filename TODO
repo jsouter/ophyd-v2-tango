@@ -33,6 +33,8 @@ HOW DO WE DESIGNATE BETWEEN SETTING (MOTORSTYLE) AND WRITING TO VALUES IMMEDIATE
 
 Should probably try and write my own error names
 
+Note that read_pipe is not awaitable in the asyncio green mode.. is this likely to change?
+
 try to make it so that the proxy of each signal is a pointer to the same object.
 
 https://nsls-ii.github.io/bluesky/hardware.html Devices may have subscribe, clear sub methods

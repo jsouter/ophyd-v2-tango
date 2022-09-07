@@ -26,7 +26,8 @@ jobs:
           /startsard.sh
           sleep 10
           python3 exampledevice.py &
-          python3 -m unittest test_with_dev_proxy.py
+          python3 -m unittest test_sardana_motor.py
+          python3 -m unittest test_example_device.py
           python3 -m unittest test_with_mock_proxy.py
 
 

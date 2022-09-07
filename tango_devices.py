@@ -286,12 +286,13 @@ class TangoPipe(TangoSignal):
 
 class TangoPipeR(TangoPipe):
     logging.warning("read_pipe command does not return timeval, so may have to timestamp manually")
+    logging.warning("it seems that read_pipe is not an awaitable function unlike read_attribute")
     async def get_reading(self) -> Reading:
-        pipe_data = await self.proxy.read_pipe(self.signal_name)
+        pipe_data = self.proxy.read_pipe(self.signal_name)
         return {"value": pipe_data, "timestamp": TimeVal().now()}
 
     async def get_descriptor(self) -> Descriptor:
-        pipe_data = await self.proxy.read_pipe(self.signal_name)
+        pipe_data = self.proxy.read_pipe(self.signal_name)
         logging.warning("Reading is a list of dictionaries. Setting json dtype to array, though 'object' is more appropriate")
         #if we are returning the pipe it is a name and list of blobs, so dimensionality 2
         return {"shape": [2],
@@ -299,12 +300,15 @@ class TangoPipeR(TangoPipe):
                 "source": self.source, }
 
     async def get_value(self):
-        pipe_data = await self.proxy.read_pipe(self.signal_name)
+        pipe_data = self.proxy.read_pipe(self.signal_name)
         return pipe_data
 
 class TangoPipeW(TangoPipe):
     async def put(self, value):
-        await self.proxy.write_pipe(self.signal_name, value)
+        logging.warning('no longer needs to be async')
+        # await self.proxy.write_pipe(self.signal_name, value)
+        self.proxy.write_pipe(self.signal_name, value)
+
 
 class TangoPipeRW(TangoPipeR, TangoPipeW):
     ...
@@ -423,6 +427,7 @@ def tango_connector(connector, comm_cls=None):
 
 
 class TangoDevice:
+    logging.warning("get_unique_name should probably belong to attr. Maybe we should use a setter or something idk")
     def __init__(self, comm: TangoComm, name: Optional[str] = None):
         self.name = name or re.sub(r'[^a-zA-Z\d]', '-', comm.dev_name) 
         # replace non alphanumeric characters with dash if name not set manually           
@@ -471,12 +476,10 @@ class TangoDevice:
     
         '''Returns old result of read_configuration and new result of read_configuration. Pass an arbitrary number of pairs of args
         where the first arg is the attribute name as a string and the second arg is the new value of the attribute'''
-        logging.warning('Need to implement put for pipes')
         logging.warning('Need to decide whether we look for the Python attribute name or Tango attribute name')
-        logging.warning('checking if self.name:signal_name is in configuration list. This is bad, we need to abstract this to a function somewhere')
         logging.warning('single pipe returns empty ordereddicts because we are counting the pipe as a read field not a read_config field')
 
-        if len(args) % 2 != 0:
+        if len(args) % 2: # != 0
             raise ArgumentError("configure can not parse an odd number of arguments")
         old_reading = await self.read_configuration()
         for attr_name, value in zip(args[0::2], args[1::2]):

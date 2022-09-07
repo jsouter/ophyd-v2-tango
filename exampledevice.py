@@ -6,6 +6,7 @@ import numpy as np
 import random
 import sys
 import multiprocessing
+import random
 
 if len(sys.argv) < 2:
     sys.argv.append('default')
@@ -28,24 +29,17 @@ new_device_info._class = "Detector"
 new_device_info.server = "Detector/"+sys.argv[1]
 
 class ExampleDevice(Device):
-    _position = 0.0
-    _set_position = {'pos': 0.0, 'timestamp': None}
-    _wavenumber = 1
-    _offset = 0
-    _amplitude = 1
-    _speed = 10
     _pipe1 = ('hello',dict(test='test', test2='test2'))
 
-    Speed = attribute(label = "Speed", dtype = float,
-    access=AttrWriteType.READ_WRITE,
-    min_value=0,
-    fget="get_Speed", fset = "set_Speed")
 
-    Value = attribute(label = "Value", dtype = float,
+    randomvalue = attribute(label = "randomvalue", dtype = float,
     access=AttrWriteType.READ,
-    min_value=-1, max_value=1,
-    fget="get_Value")
+    min_value=0, max_value=1,
+    fget="get_random_value")
 
+    def get_random_value(self):
+        return random.random()
+        
     def noise(self):
         return 0.05*self._amplitude*(2*random.random()-1)
 
@@ -70,14 +64,10 @@ class ExampleDevice(Device):
         self._pipe = value 
 
     @command(dtype_in=float)
-    def offset(self, value):
-        self._offset = value
-        print(f"offset of sin wave is now {self._offset}")
+    def doubler(self, value):
+        print(f"2 times {value} is {2*value}")
+        return 2*value
         
-    @command(dtype_in=float)
-    def wavenumber(self, value):
-        self._wavenumber = value
-        print(f"wavenumber of sin wave is now {self._wavenumber}")
 
 if __name__ == "__main__":
     ExampleDevice.run_server()
