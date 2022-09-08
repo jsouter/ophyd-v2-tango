@@ -34,7 +34,10 @@ Should probably try and write my own error names
 
 Note that read_pipe is not awaitable in the asyncio green mode.. is this likely to change?
 
-try to make it so that the proxy of each signal is a pointer to the same object.
+<!-- try to make it so that the proxy of each signal is a pointer to the same object. -->
+
+monitor functions are a lot better now but probably worth rewriting them to be async if possible. Only need to get around await subscribe_event?
+
 
 https://nsls-ii.github.io/bluesky/hardware.html Devices may have subscribe, clear sub methods
 We should do all the setting of velocity etc using the configure. Returns old and new read_configuration

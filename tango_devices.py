@@ -2,7 +2,7 @@ from argparse import ArgumentError
 from multiprocessing.sharedctypes import Value
 from PyTango.asyncio import AttributeProxy as AsyncAttributeProxy  # type: ignore
 from PyTango.asyncio import DeviceProxy as AsyncDeviceProxy  # type: ignore
-from PyTango import DeviceProxy, DevFailed  # type: ignore
+from PyTango import DeviceProxy, DevFailed, EventData  # type: ignore
 from PyTango._tango import DevState, DevString, AttrQuality, EventType, TimeVal  # type: ignore
 import asyncio
 import re
@@ -21,6 +21,8 @@ from bluesky.protocols import Dtype
 from ophyd.v2.core import Signal, SignalR, SignalW, Comm, observe_monitor
 from mockproxy import MockDeviceProxy
 import numpy as np
+from tango import set_green_mode, get_green_mode # type: ignore
+from tango import GreenMode # type: ignore
 
 from ophyd.v2.core import Monitor
 
@@ -40,6 +42,7 @@ def _get_dtype(attribute) -> Dtype:
     else:
         raise NotImplementedError(f"dtype not implemented for {value_class} with attribute {attribute.name}")
 
+# set_green_mode(GreenMode.Asyncio)
 
 _tango_dev_proxies: Dict[str, AsyncDeviceProxy] = {}
 
@@ -134,39 +137,20 @@ class TangoAttr(TangoSignal):
             self._connected = True
 
 
-
-class TangoAttrR(TangoAttr, SignalR):
-    monitor = None
-    def _get_monitor(self):
-        #how do we handle this? surely we want to be able for a single attribute to have multiple listeners
-        monitor = self.monitor or TangoSignalMonitor(self)
-        return monitor
-
-    # async def monitor_reading_3(self):
-    #     monitor = self._get_monitor()
-    #     observation = await observe_monitor(monitor)
-    #     print(observation)
-
-    async def monitor_reading(self, callback=None):
-        monitor = self._get_monitor()
+class TangoMonitorable:
+    async def monitor_reading(self, callback: Callable[[EventData], None]):
+        monitor = TangoSignalMonitor(self)
         await monitor(callback)
-        # monitor.close()
-        logging.warning("have to be smarter about when monitor should close")
         return monitor
 
-
-
-    async def monitor_value(self, callback=None):
-        #we should create a callback that takes a callback as arg, takes the doc, stores it temporarily, then extracts 
-        #the attr_value.value from the reading, then runs the callback on that
-        monitor = self._get_monitor()
-        async def value_callback(doc, callback=callback):
+    async def monitor_value(self, callback: Callable[[EventData], None]):
+        monitor = TangoSignalMonitor(self)
+        def value_callback(doc, callback=callback):
             callback(doc.attr_value.value)
         await monitor(value_callback)
         return monitor
 
-
- 
+class TangoAttrR(TangoAttr, TangoMonitorable, SignalR):
 
     def _get_shape(self, reading):
         shape = []
@@ -237,7 +221,6 @@ class TangoCommand(TangoSignal):
 
 
 class TangoPipe(TangoSignal):
-    # need an R and W superclass etc
     async def connect(self, dev_name: str, pipe: str, proxy: Optional[AsyncDeviceProxy] = None):
         if not self.connected:
             self.dev_name = dev_name
@@ -249,9 +232,11 @@ class TangoPipe(TangoSignal):
                 raise Exception(f"Couldn't read pipe {self.signal_name}")
             self._connected = True
 
-class TangoPipeR(TangoPipe):
+class TangoPipeR(TangoPipe, TangoMonitorable, SignalR):
+    #need to implement observe_reading and observe_monitor. should I just copy paste?
     logging.warning("read_pipe command does not return timeval, so may have to timestamp manually")
     logging.warning("it seems that read_pipe is not an awaitable function unlike read_attribute")
+    
     async def get_reading(self) -> Reading:
         pipe_data = self.proxy.read_pipe(self.signal_name)
         return Reading({"value": pipe_data, "timestamp": TimeVal().now()})
@@ -268,7 +253,9 @@ class TangoPipeR(TangoPipe):
         pipe_data = self.proxy.read_pipe(self.signal_name)
         return pipe_data
 
-class TangoPipeW(TangoPipe):
+    
+
+class TangoPipeW(TangoPipe, SignalW):
     async def put(self, value):
         logging.warning('no longer needs to be async')
         # await self.proxy.write_pipe(self.signal_name, value)
@@ -315,12 +302,10 @@ class ConnectTheRest:
     Can be called like a function.
     '''
     logging.warning("does not work with mock device proxy")
-    def __new__(cls, comm: Optional[TangoComm] = None):
+    def __new__(cls, comm):
         instance = super().__new__(cls)
-        if comm:
-            return instance(comm)
-        else:
-            return instance
+        return instance(comm)
+
     def __await__(self):
         ...
   
@@ -534,7 +519,7 @@ class TangoMotor(TangoDevice):
     async def describe_configuration(self):
         return await self._describe(self.comm.velocity)
 
-
+    #this should probably be changed, use a @timeout.setter
     def set_timeout(self, timeout):
         self._timeout = timeout
     
@@ -546,16 +531,7 @@ class TangoMotor(TangoDevice):
             return None
 
     def set(self, value, timeout: Optional[float] = None):
-            # q = asyncio.Queue()
-
-            # sub = self.comm.state.monitor_reading_value(q.put_nowait)
-            # while True:
-            #     _, val = await q.get()
-            #     if val != DevState.MOVING:
-            #         break
-            # sub.close()
         timeout = timeout or self.timeout
-
         async def write_and_wait():
             pos = self.comm.position
             state = self.comm.state
@@ -589,7 +565,6 @@ async def motorconnector(comm: TangoMotorComm):
     )
     await ConnectTheRest(comm)
 
-
 def motor(dev_name: str, ophyd_name: Optional[str] = None):
     ophyd_name = ophyd_name or re.sub(r'[^a-zA-Z\d]', '-', dev_name)
     c = TangoMotorComm(dev_name)
@@ -609,6 +584,7 @@ def tango_devices_main():
     import bluesky.plan_stubs as bps
     from bluesky.callbacks import LiveTable, LivePlot
     from bluesky.run_engine import call_in_bluesky_event_loop
+
 
     import timeit
 
@@ -662,7 +638,7 @@ def tango_devices_main():
             RE(count(scan_args,11))
             print('count' +str(i+1),time.time() - thetime)
     
-    scan1()
+    # scan1()
     # scan2()
 
     with CommsConnector():
@@ -687,7 +663,14 @@ def tango_devices_main():
         reading = await singlepipe.read()
         print(reading)
     # call_in_bluesky_event_loop(check_pipe_configured())
-    
+    print(get_green_mode())
+    monitor1 = call_in_bluesky_event_loop(motor1.comm.position.monitor_reading(print))
+    monitor1.close()
+    monitor2 = call_in_bluesky_event_loop(motor1.comm.position.monitor_value(print))
+    monitor2.close()
+
+
+
 
     print(id(motor1.comm.position.proxy) == id(motor1.comm.velocity.proxy))
 
