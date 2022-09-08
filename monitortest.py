@@ -10,8 +10,7 @@ with CommsConnector():
     m = motor("motor/motctrl01/1", "m")
 # a = TangoSignalMonitor(m.comm.position)
 
-the_value = call_in_bluesky_event_loop(m.comm.position.monitor_value())
+call_in_bluesky_event_loop(m.comm.position.monitor_reading(print))
 # the_value = call_in_bluesky_event_loop(m.comm.position.monitor_reading_3())
-print(f"the value is {the_value}")
 
-RE(count([m], 1), LiveTable(["m:Position"]))
+# RE(count([m], 1), LiveTable(["m:Position"]))

@@ -1,8 +1,8 @@
 from typing import OrderedDict
 # import sys
 # sys.path.append('../src/tangophyd')
-from tango_devices import TangoComm, TangoPipeRW, TangoAttrR, TangoCommand, TangoSignal, \
-    TangoAttr, motor, set_device_proxy_class, TangoSinglePipeDevice, TangoDevice
+from tango_devices import TangoComm, TangoDeviceNotFoundError, TangoPipeRW, TangoAttrR, TangoCommand, TangoSignal, \
+    TangoAttr, motor, set_device_proxy_class, TangoSinglePipeDevice, TangoDevice, TangoDeviceNotFoundError
 
 import unittest
 import asyncio
@@ -49,6 +49,14 @@ def example_device(dev_name):
     c = ExampleComm(dev_name)
     return ExampleDevice(c)
 
+class SignalTest(unittest.IsolatedAsyncioTestCase):
+    def test_cant_instantiate_abstract_tango_signal(self):
+        self.assertRaises(TypeError, TangoSignal)
+    async def test_cant_connect_tango_attr_without_db(self):
+        attr = TangoAttr()
+        with self.assertRaises(TangoDeviceNotFoundError):
+            await attr.connect("non/existing/device", "attribute_name")
+            
 
 class ExampleDeviceTest(unittest.IsolatedAsyncioTestCase):
     #how do we ensure the run engine stops after this test case?

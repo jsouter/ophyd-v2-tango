@@ -19,19 +19,6 @@ import bluesky.utils
 from mockproxy import MockDeviceProxy
 
 
-@unittest.skip
-class SignalTest(unittest.IsolatedAsyncioTestCase):
-    def test_cant_instantiate_abstract_tango_signal(self):
-        self.assertRaises(TypeError, TangoSignal)
-    async def test_cant_connect_tango_attr_without_db(self):
-        attr = TangoAttr()
-        try:
-            await attr.connect("non/existing/device", "attribute_name")
-            raise DevFailed
-        except Exception as e:
-            print(f"exception is: {e}")
-        self.assertEqual(1,2)
-
 
 
 RE = RunEngine()

@@ -57,6 +57,8 @@ def get_device_proxy_class():
     global _device_proxy_class
     return _device_proxy_class
 
+class TangoDeviceNotFoundError(KeyError):
+    ...
 
 async def _get_proxy_from_dict(dev_name: str, proxy_dict = _tango_dev_proxies) -> AsyncDeviceProxy:
     if dev_name not in proxy_dict:
@@ -66,7 +68,7 @@ async def _get_proxy_from_dict(dev_name: str, proxy_dict = _tango_dev_proxies) -
             proxy = await proxy_future
             proxy_dict[dev_name] = proxy
         except DevFailed:
-            raise DevFailed(f"Could not connect to DeviceProxy for {dev_name}")
+            raise TangoDeviceNotFoundError(f"Could not connect to DeviceProxy for {dev_name}")
     return proxy_dict[dev_name]
 
 
@@ -78,26 +80,9 @@ class TangoSignalMonitor(Monitor):
         self.proxy = signal.proxy
         self.signal_name = signal.signal_name
         self.sub_id = None
-    def sync__call__(self, callback = None):
-        #this should be deleted if we confirm it's okay for monitor reading to be async
-        async def start_sub():
-            q = asyncio.Queue()
-            self.sub_id = await self.proxy.subscribe_event(self.signal_name, EventType.CHANGE_EVENT, q.put_nowait)
-            self.last_reading = await q.get()
-            if callback:
-                callback(self.last_reading)
-        if not self.sub_id:
-            call_in_bluesky_event_loop(start_sub())
-            logging.warning("should probably avoid calling in bs event loop at this level")
-        return self.last_reading
     async def __call__(self, callback = None):
         if not self.sub_id:
-            q = asyncio.Queue()
-            self.sub_id = await self.proxy.subscribe_event(self.signal_name, EventType.CHANGE_EVENT, q.put_nowait)
-            self.last_reading = await q.get()
-            if callback:
-                callback(self.last_reading)
-        return self.last_reading
+            self.sub_id = await self.proxy.subscribe_event(self.signal_name, EventType.CHANGE_EVENT, callback)
     def close(self):
         self.proxy.unsubscribe_event(self.sub_id)
         self.sub_id = None
@@ -111,8 +96,8 @@ class TangoSignal(Signal):
         self.signal_name: str
         ...
         
-    _connected = False
-    _source = None
+    _connected: bool = False
+    _source: Optional[str] = None
 
     @property
     def connected(self):
@@ -137,7 +122,7 @@ class TangoSignal(Signal):
 class TangoAttr(TangoSignal):
     logging.warning('Have only tested attributes with scalar data so far')
     async def connect(self, dev_name: str, attr: str, proxy: Optional[AsyncDeviceProxy] = None):
-        '''Should set the member variables proxy and signal_name. May be called when no other connector used to connect signals'''
+        '''Should set the member variables proxy, dev_name and signal_name. May be called when no other connector used to connect signals'''
         if not self.connected:
             self.dev_name = dev_name
             self.signal_name = attr
@@ -163,45 +148,25 @@ class TangoAttrR(TangoAttr, SignalR):
     #     print(observation)
 
     async def monitor_reading(self, callback=None):
-        #testing with print for now
-        #look at the bluesky API (or is it ophyd?) to see what this should be used for
-        #should we do callback, or should we save to a queue, then do the callback on the queue
         monitor = self._get_monitor()
-        reading = await monitor(callback)
-        monitor.close()
+        await monitor(callback)
+        # monitor.close()
         logging.warning("have to be smarter about when monitor should close")
-        #maybe we should return the monitor object so it can be closed when needed
-        return reading
-        # monitor = self._get_monitor()
-        # while monitor.sub_id:
-        #     yield await monitor(callback)
+        return monitor
+
+
 
     async def monitor_value(self, callback=None):
-        #fix this too
-        reading = await self.monitor_reading(callback)
-        return reading.attr_value.value
-    
+        #we should create a callback that takes a callback as arg, takes the doc, stores it temporarily, then extracts 
+        #the attr_value.value from the reading, then runs the callback on that
+        monitor = self._get_monitor()
+        async def value_callback(doc, callback=callback):
+            callback(doc.attr_value.value)
+        await monitor(value_callback)
+        return monitor
 
 
-    _queues: Dict[asyncio.Queue, str] = {}
-    async def monitor_reading_2(self, q: asyncio.Queue):
-        if q not in self._queues:
-            sub_id = await self.proxy.subscribe_event(self.signal_name, EventType.CHANGE_EVENT, q.put_nowait)
-            self._queues[q] = sub_id
-        return await q.get()
-    
-    async def monitor_value_2(self, q: asyncio.Queue):
-        if q not in self._queues:
-            sub_id = await self.proxy.subscribe_event(self.signal_name, EventType.CHANGE_EVENT, q.put_nowait)
-            self._queues[q] = sub_id
-        reading = await q.get()
-        return reading.attr_value.value
-    
-    def close_monitor_2(self, q: asyncio.Queue):
-        if q in self._queues:
-            self.proxy.unsubscribe_event(self._queues[q])
-            del self._queues[q]
-    
+ 
 
     def _get_shape(self, reading):
         shape = []
@@ -215,13 +180,13 @@ class TangoAttrR(TangoAttr, SignalR):
 
     async def get_reading(self) -> Reading:
         attr_data = await self.proxy.read_attribute(self.signal_name)
-        return {"value": attr_data.value, "timestamp": attr_data.time.totime()}
+        return Reading({"value": attr_data.value, "timestamp": attr_data.time.totime()})
 
     async def get_descriptor(self) -> Descriptor:
         attr_data = await self.proxy.read_attribute(self.signal_name)
-        return {"shape": self._get_shape(attr_data),
+        return Descriptor({"shape": self._get_shape(attr_data),
                 "dtype": _get_dtype(attr_data),  # jsonschema types
-                "source": self.source, }
+                "source": self.source, })
 
     async def get_value(self):
         attr_data = await self.proxy.read_attribute(self.signal_name)
@@ -289,15 +254,15 @@ class TangoPipeR(TangoPipe):
     logging.warning("it seems that read_pipe is not an awaitable function unlike read_attribute")
     async def get_reading(self) -> Reading:
         pipe_data = self.proxy.read_pipe(self.signal_name)
-        return {"value": pipe_data, "timestamp": TimeVal().now()}
+        return Reading({"value": pipe_data, "timestamp": TimeVal().now()})
 
     async def get_descriptor(self) -> Descriptor:
-        pipe_data = self.proxy.read_pipe(self.signal_name)
+        # pipe_data = self.proxy.read_pipe(self.signal_name)
         logging.warning("Reading is a list of dictionaries. Setting json dtype to array, though 'object' is more appropriate")
         #if we are returning the pipe it is a name and list of blobs, so dimensionality 2
-        return {"shape": [2],
+        return Descriptor({"shape": [2],
                 "dtype": "array",  # jsonschema types
-                "source": self.source, }
+                "source": self.source, })
 
     async def get_value(self):
         pipe_data = self.proxy.read_pipe(self.signal_name)
@@ -425,6 +390,8 @@ def tango_connector(connector, comm_cls=None):
         comm_cls = get_type_hints(connector)["comm"]
     _tango_connectors[comm_cls] = connector
 
+class WrongNumberOfArgumentsError(TypeError):
+    ...
 
 class TangoDevice:
     logging.warning("get_unique_name should probably belong to attr. Maybe we should use a setter or something idk")
@@ -480,7 +447,7 @@ class TangoDevice:
         logging.warning('single pipe returns empty ordereddicts because we are counting the pipe as a read field not a read_config field')
 
         if len(args) % 2: # != 0
-            raise ArgumentError("configure can not parse an odd number of arguments")
+            raise WrongNumberOfArgumentsError("configure can not parse an odd number of arguments")
         old_reading = await self.read_configuration()
         for attr_name, value in zip(args[0::2], args[1::2]):
             attr = getattr(self.comm, attr_name)
@@ -594,27 +561,14 @@ class TangoMotor(TangoDevice):
             state = self.comm.state
             await pos.put(value)
             q = asyncio.Queue()
-            sub = await state.monitor_reading(q.put_nowait)
+            monitor = await state.monitor_value(q.put_nowait)
             while True:
-                state_reading= await q.get()
-                if state_reading.attr_value.value != DevState.MOVING:
-                    break
-            state.proxy.unsubscribe_event(sub)
-
-        async def write_and_wait_2():
-            pos = self.comm.position
-            state = self.comm.state
-            await pos.put(value)
-            q = asyncio.Queue()
-            while True:
-                state_value= await state.monitor_value_2(q)
+                state_value = await q.get()
                 if state_value != DevState.MOVING:
+                    monitor.close()
                     break
-            state.close_monitor_2(q)
-
-
         status = AsyncStatus(asyncio.wait_for(
-            write_and_wait_2(), timeout=timeout))
+            write_and_wait(), timeout=timeout))
         return status
 
 

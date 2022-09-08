@@ -1,13 +1,9 @@
 Add exception case to wait_for_not_moving for when the state is e.g. in alarm state, right now it only check if not moving
-<!-- Rewrite TangoSignal etc to derive from the ophyd Signal classes -->
 implement observe monitor member functions etc
 More rigorous testing about async vs sync green mode overhead
 Rewrite ConnectTheRest to be callable as a function as type-checkable. Tom recommends implementing as a function and instatiating a class instance if required. Says he only implemented the protocol EpicsConnector for type checking reasons.
 Implement other connectors I haven't rewritten yet
 Write unit tests that utilise real (no hardware but actually running on Tango) devices 
-<!-- Write class to mock output of AsyncDeviceProxy for unit tests. -->
-<!-- Cleanup sync proxy remnants. Ctrl+F for "sync" -->
-<!-- Change type hint for get_tango_connector to be TangoConnector -->
 Consider if there is a better way to implement _get_dtype
 <!-- How do we implement "source" for commands and pipes? These need not have unique names, can have an attr+command with same name -->
 Implement DISCONNECTED_ERROR for tango
@@ -22,8 +18,11 @@ wait_for_not_moving should likely be set in the motor device level, using observ
 Closer look at TangoMonitor
 <!-- Need to use put_nowait as Tom said. See q.py in zzztestingstuff -->
 investigate read_attribute_asynch functions etc
-Create single attribute ophyd device class
+<!-- Create single attribute ophyd device class -->
 Why doesn't DevFailed exception when creating device with wrong name stop the program?
+
+
+Decide whether "read pipe" should return the name + list of blobs or just list of blobs
 
 Change monitor_reading to use Monitor object with close method. See close_monitor_2 etc
 Fix the np.float64 thing in dtype needed to fix the mockproxy thing
