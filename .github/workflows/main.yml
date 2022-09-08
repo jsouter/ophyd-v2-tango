@@ -14,14 +14,19 @@ jobs:
   sardana:
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/jsouter/ophyd-v2-tango/sardemo:v3
+      image: ghcr.io/jsouter/ophyd-v2-tango/sardemo:v4
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: checkout repo
         uses: actions/checkout@v3.0.2
+      - name: linting
+        run: |
+          python3 -m flake8 tango_devices.py
+          python3 -m unittest tango_devices.py
       - name: start sardana
+        if: always()
         run: |
           /startsard.sh
           sleep 10

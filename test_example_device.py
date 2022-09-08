@@ -63,32 +63,36 @@ class ExampleDeviceTest(unittest.IsolatedAsyncioTestCase):
     #should we do setUp to instantiate motor or not?
     def setUp(self):
         self.dev_name = "tango/example/device"
+        with CommsConnector():
+            self.device = example_device(self.dev_name)
 
     def test_instantiate_device(self):
-        with CommsConnector():
-            device = example_device(self.dev_name)
+        pass
 
     def test_count(self):
-        with CommsConnector():
-            device = example_device(self.dev_name)
-        RE(count([device],1),print)
+        RE(count([self.device],1),print)
 
     async def test_read_pipe(self):
-        with CommsConnector():
-            device = example_device(self.dev_name)
-        pipe_reading = await device.comm.my_pipe.get_value()
+        await self.device.comm.my_pipe.get_value()
     
     async def test_write_pipe(self):
-        with CommsConnector():
-            device = example_device(self.dev_name)
-        pipedata = await device.comm.my_pipe.get_value()
+        pipedata = await self.device.comm.my_pipe.get_value()
         pipedata[1][0]['value'] = "how are you"
         print(1, pipedata[1][0])
-        await device.comm.my_pipe.put(pipedata)
-        reading2 = await device.comm.my_pipe.get_value()
+        await self.device.comm.my_pipe.put(pipedata)
+        reading2 = await self.device.comm.my_pipe.get_value()
         assert reading2[1][0]['value'] == "how are you"
 
         pipedata[1][0]['value'] = "not too bad"
-        await device.comm.my_pipe.put(pipedata)
-        reading2 = await device.comm.my_pipe.get_value()
+        await self.device.comm.my_pipe.put(pipedata)
+        reading2 = await self.device.comm.my_pipe.get_value()
         assert reading2[1][0]['value'] == "not too bad"
+    
+    def test_command_executed(self):
+        number = random.random()
+        doubled = self.device.comm.doubler.execute(number)
+        assert doubled == 2 * number
+
+    def test_command_fails_wrong_type(self):
+        with self.assertRaises(DevFailed):
+            self.device.comm.doubler.execute(None)

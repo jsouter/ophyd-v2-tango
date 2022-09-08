@@ -31,5 +31,5 @@ RUN apt update; apt install -y pip git
 RUN apt install pkg-config libboost-all-dev -y
 ENV PKG_CONFIG_PATH=/usr/local/tango/lib/pkgconfig/
 RUN pip install PyTango
-RUN pip install ipython jupyter matplotlib \
+RUN pip install ipython jupyter matplotlib flake8 \
 git+https://github.com/bluesky/bluesky git+https://github.com/dls-controls/ophyd

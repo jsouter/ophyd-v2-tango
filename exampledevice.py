@@ -63,7 +63,7 @@ class ExampleDevice(Device):
     def write_my_pipe(self, value):
         self._pipe = value 
 
-    @command(dtype_in=float)
+    @command(dtype_in=float, dtype_out=float)
     def doubler(self, value):
         print(f"2 times {value} is {2*value}")
         return 2*value

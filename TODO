@@ -38,9 +38,15 @@ Note that read_pipe is not awaitable in the asyncio green mode.. is this likely 
 
 monitor functions are a lot better now but probably worth rewriting them to be async if possible. Only need to get around await subscribe_event?
 
+Might need to put bluesky Protocols into my classes, like Configurable etc
+
 
 https://nsls-ii.github.io/bluesky/hardware.html Devices may have subscribe, clear sub methods
 We should do all the setting of velocity etc using the configure. Returns old and new read_configuration
+
+
+Can we use partials to overwrite methods for classes when we set the device proxy class i.e. use sync vs async methods.
+
 
 <!-- Attempted to implement MockDeviceProxy with subscribe_event but asyncio may not be up to the task for it: we need to return a sub_id while also keeping a background thread/process that handles the callback. Maybe a job for run_in_executor but I don't want to spend all my time on this -->
 At this point would it be better for each of the DeviceProxies to essentially be attribute proxies?
