@@ -10,7 +10,7 @@ Implement DISCONNECTED_ERROR for tango
 Use Reading and Descriptor type hints from protocols.py
 Decide how to handle raised Exceptions. Specify exceptions more
 TangoAttr.connect(): what exception type?
-Inherit from Signal for Pipe and add put to W version
+<!-- Inherit from Signal for Pipe and add put to W version -->
 make a plan that can handle pipes/anything not just scalar (look into bluesky plans designed to handle 2-3D data.)
 None/null json type not encouraged by Dtype bluesky protocol. Also missing "object" and there is strange separation of "number" and "integer"
 Most likely need to rename the __connect__ method in Comm
@@ -24,10 +24,10 @@ Why doesn't DevFailed exception when creating device with wrong name stop the pr
 
 Decide whether "read pipe" should return the name + list of blobs or just list of blobs
 
-Change monitor_reading to use Monitor object with close method. See close_monitor_2 etc
+<!-- Change monitor_reading to use Monitor object with close method. See close_monitor_2 etc -->
 Fix the np.float64 thing in dtype needed to fix the mockproxy thing
 fix connecttherest to work with mock class
-Need to rethink how the bluesky signal names should be written, especially for single attribute etc
+<!-- Need to rethink how the bluesky signal names should be written, especially for single attribute etc -->
 HOW DO WE DESIGNATE BETWEEN SETTING (MOTORSTYLE) AND WRITING TO VALUES IMMEDIATELY?
 
 Should probably try and write my own error names
@@ -49,12 +49,12 @@ Can we use partials to overwrite methods for classes when we set the device prox
 
 
 <!-- Attempted to implement MockDeviceProxy with subscribe_event but asyncio may not be up to the task for it: we need to return a sub_id while also keeping a background thread/process that handles the callback. Maybe a job for run_in_executor but I don't want to spend all my time on this -->
-At this point would it be better for each of the DeviceProxies to essentially be attribute proxies?
+At this point would it be better for each of the DeviceProxies to essentially be attribute proxies? (I think no, because each AttributeProxy also contains a DeviceProxy member variable. so dev proxy may be more lightweight even if it's syntactically weird)
 Maybe DeviceProxies for pipes and configs and AttributeProxies for attributes
 maybe _get_proxy_from_dict returns attribute proxies if there are 3 slashes domain/family/member/attribute and if 2 slashes returns deviceproxy?
 the unique names for attributes should probably inherit from the Python names not the proper Tango names
 
-Rethink how monitor_reading and monitor_value should work..
+<!-- Rethink how monitor_reading and monitor_value should work.. -->
 
 
 UNIT TEST IDEAS:

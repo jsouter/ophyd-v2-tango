@@ -43,9 +43,9 @@ class MotorTestMockDeviceProxy(unittest.IsolatedAsyncioTestCase):
         rand_number = random.random()
         with CommsConnector():
             test_motor = motor(self.dev_name, "test_motor")       
-        old_reading, new_reading = call_in_bluesky_event_loop(test_motor.configure("velocity", rand_number))
+        _, new_reading = call_in_bluesky_event_loop(test_motor.configure("velocity", rand_number))
         print(f"test_motor reading is {new_reading}")
-        assert new_reading["test_motor:Velocity"]['value'] == rand_number
+        assert new_reading["test_motor:velocity"]['value'] == rand_number
     
     async def test_cant_set_non_config_attributes(self):
         rand_number = random.random()
@@ -68,7 +68,7 @@ class MotorTestMockDeviceProxy(unittest.IsolatedAsyncioTestCase):
     def test_count_in_RE_with_callback_named_attribute(self):
         with CommsConnector():
             test_motor = motor(self.dev_name, "test_motor")
-        RE(count([test_motor],1), LiveTable(["test_motor:Position"]))
+        RE(count([test_motor],1), LiveTable(["test_motor:position"]))
 
     def test_motor_bluesky_movable(self):
         rand_number = random.random() + 1.0
@@ -81,9 +81,9 @@ class MotorTestMockDeviceProxy(unittest.IsolatedAsyncioTestCase):
         rand_number = random.random() + 1.0
         with CommsConnector():
             test_motor = motor(self.dev_name, "test_motor")
-        RE(scan([],test_motor,0,rand_number,2), LiveTable(["test_motor:Position"]))
+        RE(scan([],test_motor,0,rand_number,2), LiveTable(["test_motor:position"]))
         currentPos = await test_motor.read()
-        assert currentPos['test_motor:Position']['value'] == rand_number, "Final position does not equal set number"
+        assert currentPos['test_motor:position']['value'] == rand_number, "Final position does not equal set number"
     
 #not sure what the deal is with "1 comm not connected ... NoneType object is not iterable"
 #think it's to do with connecttherest

@@ -175,7 +175,7 @@ class TangoAttr(TangoSignal):
             self._connected = True
 
 
-class TangoMonitorable:
+class _TangoMonitorable:
     async def monitor_reading(self, callback: Callable[[EventData], None]):
         monitor = TangoSignalMonitor(self)
         await monitor(callback)
@@ -190,7 +190,7 @@ class TangoMonitorable:
         return monitor
 
 
-class TangoAttrR(TangoAttr, TangoMonitorable, SignalR):
+class TangoAttrR(TangoAttr, _TangoMonitorable, SignalR):
 
     def _get_shape(self, reading):
         shape = []
@@ -199,6 +199,7 @@ class TangoAttrR(TangoAttr, TangoMonitorable, SignalR):
                 shape.append(reading.dim_x)
             shape.append(reading.dim_y)
         elif reading.dim_x > 1:  # for 1D arrays
+            # scalars should be returned as [], not [1]
             shape.append(reading.dim_x)
         return shape
 
@@ -269,7 +270,7 @@ class TangoPipe(TangoSignal):
             self._connected = True
 
 
-class TangoPipeR(TangoPipe, TangoMonitorable, SignalR):
+class TangoPipeR(TangoPipe, _TangoMonitorable, SignalR):
     logging.warning("manual timestamp for read_pipe")
 
     async def get_reading(self) -> Reading:
@@ -334,9 +335,9 @@ class TangoConnector(Protocol, Generic[TangoCommT]):
 _tango_connectors: Dict[Type[TangoComm], TangoConnector] = {}
 
 
-class ConnectTheRest:
+class ConnectSimilarlyNamed:
     '''
-    ConnectTheRest(comm: TangoComm)
+    ConnectSimilarlyNamed(comm: TangoComm, proxy: Optional[AsyncDeviceProxy])
     Connector class that checks DeviceProxy for similarly named signals to
     those unconnected in the comm object.
     The connector connects to attributes/pipes/commands that have identical
@@ -347,9 +348,9 @@ class ConnectTheRest:
     '''
     logging.warning("does not work with mock device proxy")
 
-    def __new__(cls, comm):
+    def __new__(cls, *args, **kwargs):
         instance = super().__new__(cls)
-        return instance(comm)
+        return instance(*args, **kwargs)
 
     def __await__(self):
         ...
@@ -357,25 +358,18 @@ class ConnectTheRest:
     async def __call__(self, comm: TangoComm,
                        proxy: Optional[AsyncDeviceProxy] = None):
         self.comm = comm
-        self.signals: Dict[str, TangoSignal] = {}
+        self.unconnected: Dict[str, TangoSignal] = {}
         for signal_name in get_type_hints(comm):
             signal = getattr(self.comm, signal_name)
             if not signal.connected:
-                self.signals[signal_name] = signal
-        if not self.signals:  # if dict empty
+                self.unconnected[signal_name] = signal
+        if not self.unconnected:  # if dict empty
             return
         self.proxy = proxy or await _get_proxy_from_dict(comm.dev_name)
         self.coros: List[Coroutine] = []
         self.guesses: Dict[str, Dict[str, str]] = {}
-        self.signal_types = \
-            {'attribute':   {'baseclass': TangoAttr,
-                             'listcommand': self.proxy.get_attribute_list},
-             'pipe':        {'baseclass': TangoPipe,
-                             'listcommand': self.proxy.get_pipe_list},
-             'command':     {'baseclass': TangoCommand,
-                             'listcommand': self.proxy.get_command_list}}
-        for signal_name in self.signals:
-            self.schedule_signal(self.signals[signal_name], signal_name)
+        for name, signal in self.unconnected.items():
+            self.schedule_signal(signal, name)
         if self.coros:
             await asyncio.gather(*self.coros)
 
@@ -383,40 +377,45 @@ class ConnectTheRest:
     def guess_string(signal_name):
         return re.sub(r'\W+', '', signal_name).lower()
 
-    def make_guesses(self, signal_type):
-        if signal_type not in self.guesses:  # if key exists
-            # only populated when attribute/pipe/command found
-            # in unconnected signals
+    def make_guesses(self, signal):
+        signal_type = type(signal)
+        if signal_type not in self.guesses:
             self.guesses[signal_type] = {}
             # attribute (or pipe or command) names
-            attributes = self.signal_types[signal_type]['listcommand']()
-            for attr in attributes:
-                name_guess = self.guess_string(attr)
-                self.guesses[signal_type][name_guess] = attr
+            if isinstance(signal, TangoAttr):
+                signals = self.proxy.get_attribute_list()
+            elif isinstance(signal, TangoPipe):
+                signals = self.proxy.get_pipe_list()
+            elif isinstance(signal, TangoCommand):
+                signals = self.proxy.get_command_list()
+            else:
+                return
+            for sig in signals:
+                name_guess = self.guess_string(sig)
+                self.guesses[signal_type][name_guess] = sig
                 # lowercased-alphanumeric names are keys,
                 # actual attribute names are values
 
     def schedule_signal(self, signal, signal_name):
-        for signal_type in self.signal_types:
-            if isinstance(signal, self.signal_types[signal_type]['baseclass']):
-                self.make_guesses(signal_type)
-                name_guess = self.guess_string(signal_name)
-                if name_guess in self.guesses[signal_type]:  # if key exists
-                    attr_proper_name = self.guesses[signal_type][name_guess]
-                    coro = signal.connect(self.comm.dev_name, attr_proper_name)
-                    self.coros.append(coro)
-                else:
-                    raise ValueError(
-                        f"No {signal_type} found resembling '{name_guess}'")
-                break   # e.g. if attribute, dont check for pipe
+        signal_type = type(signal)
+        self.make_guesses(signal)
+        name_guess = self.guess_string(signal_name)
+        if name_guess in self.guesses[signal_type]:  # if key exists
+            attr_proper_name = self.guesses[signal_type][name_guess]
+            coro = signal.connect(self.comm.dev_name, attr_proper_name)
+            self.coros.append(coro)
+        else:
+            raise ValueError(
+                f"No named Tango signal found resembling '{name_guess}'"
+                f" for type {signal_type.__name__}")
 
 
 def get_tango_connector(comm: TangoComm) -> TangoConnector:
     if type(comm) in _tango_connectors:  # .keys()
         return _tango_connectors[type(comm)]
     else:
-        logging.info('Defaulting to "ConnectTheRest()"')
-        return ConnectTheRest
+        logging.info('Defaulting to "ConnectSimilarlyNamed()"')
+        return ConnectSimilarlyNamed
 
 
 def tango_connector(connector, comm_cls=None):
@@ -477,7 +476,7 @@ class TangoDevice:
 
     def get_unique_name(self, attr):
         # return self.name + ':' + attr.signal_name
-        return self.name + ':' + attr.ophyd_name
+        return self.name + ':' + attr.name
 
     async def configure(self, *args):
         '''Returns old result of read_configuration and new result of
@@ -618,11 +617,19 @@ class TangoMotor(TangoDevice):
 
 
 def make_tango_signals(comm: TangoComm):
+    '''
+    make_tango_signals(comm: TangoComm)
+    Loops over type hinted signals in comm, sets attributes with the same
+    name as the type hint as a member of comm, of the hinted type. Assigns the
+    member variable "name" for each of these signals, to be accessed by the
+    device for the purpose of generating globally unique signal names of the
+    form "device_name:attr_name" to be passed to RunEngine callbacks.
+    '''
     hints = get_type_hints(comm)  # dictionary of names and types
-    for signal_name in hints:
-        signal = hints[signal_name]()
-        signal.ophyd_name = signal_name
-        setattr(comm, signal_name, signal)
+    for name in hints:
+        signal = hints[name]()
+        signal.name = name
+        setattr(comm, name, signal)
 
 
 @tango_connector
@@ -633,24 +640,25 @@ async def motorconnector(comm: TangoMotorComm):
         comm.velocity.connect(comm.dev_name, "Velocity", proxy),
         comm.state.connect(comm.dev_name, "State", proxy),
     )
-    await ConnectTheRest(comm)
+    await ConnectSimilarlyNamed(comm, proxy)
 
 
-def motor(dev_name: str, ophyd_name: Optional[str] = None):
-    ophyd_name = ophyd_name or re.sub(r'[^a-zA-Z\d]', '-', dev_name)
+def motor(dev_name: str, name: Optional[str] = None):
+    name = name or re.sub(r'[^a-zA-Z\d]', '-', dev_name)
     c = TangoMotorComm(dev_name)
-    return TangoMotor(c, ophyd_name)
+    return TangoMotor(c, name)
 
 
 def tango_devices_main():
-    from bluesky.run_engine import get_bluesky_event_loop
+    # from bluesky.run_engine import get_bluesky_event_loop
     from bluesky.run_engine import RunEngine
     from bluesky.plans import count, scan
     import time
-    from tango import set_green_mode, get_green_mode # type: ignore
-    from tango import GreenMode # type: ignore
-    import bluesky.plan_stubs as bps
-    from bluesky.callbacks import LiveTable, LivePlot
+    # from tango import set_green_mode, get_green_mode # type: ignore
+    # from tango import GreenMode # type: ignore
+    # import bluesky.plan_stubs as bps
+    from bluesky.callbacks import LiveTable
+    # from bluesky.callbacks import LivePlot
     from bluesky.run_engine import call_in_bluesky_event_loop
 
     # set_green_mode(GreenMode.Asyncio)
@@ -678,7 +686,7 @@ def tango_devices_main():
                 scan_args += [motors[j], 0, 1]
                 table_args += ['motor'+str(j+1)+':position']
             thetime = time.time()
-            RE(scan([],*scan_args,11), LiveTable(table_args))
+            RE(scan([], *scan_args, 11), LiveTable(table_args))
             # RE(scan([], *scan_args, 11))
             print('scan' + str(i+1), time.time() - thetime)
 
@@ -686,13 +694,14 @@ def tango_devices_main():
         print('with 2 motors:')
         for i in range(10):
             thetime = time.time()
-            RE(scan([],motor1,0,1,motor2,0,1,10*i+1))
-            print('steps' +str(10*i+1), time.time() - thetime)
+            RE(scan([], motor1, 0, 1, motor2, 0, 1, 10*i+1))
+            print('steps' + str(10*i+1), time.time() - thetime)
         print('with 4 motors:')
         for i in range(10):
             thetime = time.time()
-            RE(scan([],motor1,0,1,motor2,0,1,motor3,0,1,motor4,0,1,10*i+1))
-            print('steps' +str(10*i+1), time.time() - thetime)
+            RE(scan([], motor1, 0, 1, motor2, 0, 1, motor3,
+                    0, 1, motor4, 0, 1, 10*i+1))
+            print('steps' + str(10*i+1), time.time() - thetime)
         for i in range(4):
             scan_args = []
             table_args = []
@@ -701,17 +710,17 @@ def tango_devices_main():
                 table_args += ['motor'+str(j+1)+':position']
             thetime = time.time()
             # RE(count(scan_args,11), LiveTable(table_args))
-            RE(count(scan_args,11))
-            print('count' +str(i+1),time.time() - thetime)
-    
+            RE(count(scan_args, 11))
+            print('count' + str(i+1), time.time() - thetime)
+
     # scan1()
     # scan2()
 
     with CommsConnector():
-        single = TangoSingleAttributeDevice("motor/motctrl01/1", "Position", 
+        single = TangoSingleAttributeDevice("motor/motctrl01/1", "Position",
                                             "mymotorposition")
-        singlepipe = TangoSinglePipeDevice("tango/example/device", "my_pipe", 
-                                            "mypipe")
+        singlepipe = TangoSinglePipeDevice("tango/example/device", "my_pipe",
+                                           "mypipe")
 
     RE(count([single]), LiveTable(["mymotorposition"]))
     # RE(count([single, singlepipe]), print)
@@ -723,16 +732,23 @@ def tango_devices_main():
     async def check_pipe_configured():
         reading = await singlepipe.read()
         print(reading)
-        await singlepipe.configure('pipe',('hello', 
-        [{'name': 'test', 'dtype': DevString, 'value': 'how are you'}, 
-         {'name': 'test2', 'dtype': DevString, 'value': 'test2'}]))
+        await singlepipe.configure('pipe', ('hello',
+                                   [{'name': 'test', 'dtype': DevString,
+                                     'value': 'how are you'},
+                                    {'name': 'test2', 'dtype': DevString,
+                                     'value': 'test2'}]))
         reading = await singlepipe.read()
         print(reading)
-        await singlepipe.configure('pipe',('hello', 
-        [{'name': 'test', 'dtype': DevString, 'value': 'yeah cant complain'}, 
-         {'name': 'test2', 'dtype': DevString, 'value': 'test2'}]))
+        await singlepipe.configure('pipe', ('hello',
+                                   [{'name': 'test', 'dtype': DevString,
+                                     'value': 'yeah cant complain'},
+                                    {'name': 'test2', 'dtype': DevString,
+                                     'value': 'test2'}]))
         reading = await singlepipe.read()
         print(reading)
+    
+    # a =call_in_bluesky_event_loop(motor1.comm.position.get_reading())
+    # print("position", a)
     # call_in_bluesky_event_loop(check_pipe_configured())
     # print(get_green_mode())
     # monitor1 = call_in_bluesky_event_loop(

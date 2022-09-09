@@ -1,7 +1,7 @@
 from typing import OrderedDict
 # import sys
 # sys.path.append('../src/tangophyd')
-from tango_devices import TangoComm, TangoDeviceNotFoundError, TangoPipeRW, TangoAttrR, TangoCommand, TangoSignal, \
+from tango_devices import TangoComm, TangoDeviceNotFoundError, TangoPipeRW,TangoAttrRW, TangoAttrR, TangoCommand, TangoSignal, \
     TangoAttr, motor, set_device_proxy_class, TangoSinglePipeDevice, TangoDevice, TangoDeviceNotFoundError
 
 import unittest
@@ -30,6 +30,7 @@ class ExampleComm(TangoComm):
     my_pipe: TangoPipeRW
     doubler: TangoCommand
     randomvalue: TangoAttrR
+    array: TangoAttrRW
 
 class ExampleDevice(TangoDevice):
     comm: ExampleComm # satisfies type checker
@@ -70,7 +71,9 @@ class ExampleDeviceTest(unittest.IsolatedAsyncioTestCase):
         pass
 
     def test_count(self):
-        RE(count([self.device],1),print)
+        RE(count([self.device],1))
+        # RE(count([self.device],1),print)
+
 
     async def test_read_pipe(self):
         await self.device.comm.my_pipe.get_value()
@@ -78,7 +81,6 @@ class ExampleDeviceTest(unittest.IsolatedAsyncioTestCase):
     async def test_write_pipe(self):
         pipedata = await self.device.comm.my_pipe.get_value()
         pipedata[1][0]['value'] = "how are you"
-        print(1, pipedata[1][0])
         await self.device.comm.my_pipe.put(pipedata)
         reading2 = await self.device.comm.my_pipe.get_value()
         assert reading2[1][0]['value'] == "how are you"
@@ -96,3 +98,18 @@ class ExampleDeviceTest(unittest.IsolatedAsyncioTestCase):
     def test_command_fails_wrong_type(self):
         with self.assertRaises(DevFailed):
             self.device.comm.doubler.execute(None)
+    
+    async def test_read_array(self):
+        call_in_bluesky_event_loop(self.device.comm.array.get_value())
+        #not sure why its now failing to read attributes for this device.
+        #something about cant await  device attribute or something
+    async def test_read_write_array(self):
+        async def read_write():
+            array = await self.device.comm.array.get_value()
+            print("array: ", array)
+            array = [[random.random(), random.random()], [random.random(), random.random()]]
+            await self.device.comm.array.put(array)
+            array = await self.device.comm.array.get_value()
+            print("array: ", array)
+
+        call_in_bluesky_event_loop(read_write())

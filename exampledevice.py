@@ -1,12 +1,15 @@
 from tango import Database, DbDevInfo
 import time
 from tango.server import Device, attribute, command, pipe
-from tango import Util, Attr, AttrWriteType, AttrQuality, AttributeProxy, PipeWriteType
+from tango import Util, Attr, AttrWriteType, AttrQuality, AttributeProxy, \
+    PipeWriteType
 import numpy as np
 import random
 import sys
 import multiprocessing
 import random
+from PyTango import CmdArgType
+import numpy as np
 
 if len(sys.argv) < 2:
     sys.argv.append('default')
@@ -29,37 +32,34 @@ new_device_info._class = "Detector"
 new_device_info.server = "Detector/"+sys.argv[1]
 
 class ExampleDevice(Device):
-    _pipe1 = ('hello',dict(test='test', test2='test2'))
 
-
-    randomvalue = attribute(label = "randomvalue", dtype = float,
-    access=AttrWriteType.READ,
-    min_value=0, max_value=1,
-    fget="get_random_value")
+    _array = np.array([[1, 2], [3, 4]])
+    randomvalue = attribute(label="randomvalue", dtype=float,
+                            access=AttrWriteType.READ,
+                            min_value=0, max_value=1,
+                            fget="get_random_value")
 
     def get_random_value(self):
         return random.random()
-        
-    def noise(self):
-        return 0.05*self._amplitude*(2*random.random()-1)
 
-    def get_Value(self):
-        value = np.sin(2*np.pi*self._wavenumber*self._position)+self._offset+self.noise()
-        # print(f"value is {value}")
-        return value
+    array = attribute(label="array", dtype=((float,),),
+                            max_dim_x=2, max_dim_y=2,
+                            # access=AttrWriteType.READ_WRITE,
+                            fget="get_array",
+                            fset="set_array")
 
-    def get_Speed(self):
-        return self._speed
+    def get_array(self):
+        return self._array
 
-    def set_Speed(self, speed):
-        self._speed = speed
-    
-    _pipe = ('hello',dict(test='test', test2='test2'))
-    my_pipe = pipe(access = PipeWriteType.PIPE_READ_WRITE)
+    def set_array(self, value):
+        self._array = value
+
+    _pipe = ('hello', dict(test='test', test2='test2'))
+    my_pipe = pipe(access=PipeWriteType.PIPE_READ_WRITE)
 
     def read_my_pipe(self):
         return self._pipe
-    
+
     def write_my_pipe(self, value):
         self._pipe = value 
 
@@ -67,7 +67,7 @@ class ExampleDevice(Device):
     def doubler(self, value):
         print(f"2 times {value} is {2*value}")
         return 2*value
-        
+
 
 if __name__ == "__main__":
     ExampleDevice.run_server()
