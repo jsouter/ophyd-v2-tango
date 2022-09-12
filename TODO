@@ -1,25 +1,30 @@
 Add exception case to wait_for_not_moving for when the state is e.g. in alarm state, right now it only check if not moving
-implement observe monitor member functions etc
+<!-- implement observe monitor member functions etc -->
 More rigorous testing about async vs sync green mode overhead
 Rewrite ConnectTheRest to be callable as a function as type-checkable. Tom recommends implementing as a function and instatiating a class instance if required. Says he only implemented the protocol EpicsConnector for type checking reasons.
 Implement other connectors I haven't rewritten yet
-Write unit tests that utilise real (no hardware but actually running on Tango) devices 
+Write unit tests that utilise real (no hardware but actually running on Tango) devices
 Consider if there is a better way to implement _get_dtype
 <!-- How do we implement "source" for commands and pipes? These need not have unique names, can have an attr+command with same name -->
 Implement DISCONNECTED_ERROR for tango
-Use Reading and Descriptor type hints from protocols.py
+<!-- Use Reading and Descriptor type hints from protocols.py -->
 Decide how to handle raised Exceptions. Specify exceptions more
 TangoAttr.connect(): what exception type?
 <!-- Inherit from Signal for Pipe and add put to W version -->
 make a plan that can handle pipes/anything not just scalar (look into bluesky plans designed to handle 2-3D data.)
 None/null json type not encouraged by Dtype bluesky protocol. Also missing "object" and there is strange separation of "number" and "integer"
-Most likely need to rename the __connect__ method in Comm
-wait_for_not_moving should likely be set in the motor device level, using observe_monitor from TangoAttrR, then we have to have Position as TangoAttrRW to have put and observe_reading
-Closer look at TangoMonitor
+<!-- Most likely need to rename the __connect__ method in Comm -->
+<!-- wait_for_not_moving should likely be set in the motor device level, using observe_monitor from TangoAttrR, then we have to have Position as TangoAttrRW to have put and observe_reading -->
+<!-- Closer look at TangoMonitor -->
 <!-- Need to use put_nowait as Tom said. See q.py in zzztestingstuff -->
 investigate read_attribute_asynch functions etc
 <!-- Create single attribute ophyd device class -->
 Why doesn't DevFailed exception when creating device with wrong name stop the program?
+
+
+Need to implement stuff like TangoAttrRW[float]
+
+set_device_proxy_class, could make it look more like _WithPvCls 
 
 
 Decide whether "read pipe" should return the name + list of blobs or just list of blobs
@@ -36,23 +41,26 @@ Note that read_pipe is not awaitable in the asyncio green mode.. is this likely 
 
 <!-- try to make it so that the proxy of each signal is a pointer to the same object. -->
 
-monitor functions are a lot better now but probably worth rewriting them to be async if possible. Only need to get around await subscribe_event?
+monitor functions are a lot better now but probably worth rewriting them to be sync if possible. Only need to get around await subscribe_event?
 
-Might need to put bluesky Protocols into my classes, like Configurable etc
+Might need to put bluesky Protocols into my classes, like Configurable, Readable etc
+Implement Flyable devices. how do I test this? Do I have a flyscanning Tango device??
 
+see check_value in hardware.html: we should implement checking to see max and min lims
 
 https://nsls-ii.github.io/bluesky/hardware.html Devices may have subscribe, clear sub methods
 We should do all the setting of velocity etc using the configure. Returns old and new read_configuration
-
+implement hints
+subscribe(function): how does this work when we have multiple readable values?
 
 Can we use partials to overwrite methods for classes when we set the device proxy class i.e. use sync vs async methods.
 
 
 <!-- Attempted to implement MockDeviceProxy with subscribe_event but asyncio may not be up to the task for it: we need to return a sub_id while also keeping a background thread/process that handles the callback. Maybe a job for run_in_executor but I don't want to spend all my time on this -->
-At this point would it be better for each of the DeviceProxies to essentially be attribute proxies? (I think no, because each AttributeProxy also contains a DeviceProxy member variable. so dev proxy may be more lightweight even if it's syntactically weird)
-Maybe DeviceProxies for pipes and configs and AttributeProxies for attributes
+<!-- At this point would it be better for each of the DeviceProxies to essentially be attribute proxies? (I think no, because each AttributeProxy also contains a DeviceProxy member variable. so dev proxy may be more lightweight even if it's syntactically weird) -->
+<!-- Maybe DeviceProxies for pipes and configs and AttributeProxies for attributes -->
 maybe _get_proxy_from_dict returns attribute proxies if there are 3 slashes domain/family/member/attribute and if 2 slashes returns deviceproxy?
-the unique names for attributes should probably inherit from the Python names not the proper Tango names
+<!-- the unique names for attributes should probably inherit from the Python names not the proper Tango names -->
 
 <!-- Rethink how monitor_reading and monitor_value should work.. -->
 

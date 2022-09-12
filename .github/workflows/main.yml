@@ -21,11 +21,6 @@ jobs:
     steps:
       - name: checkout repo
         uses: actions/checkout@v3.0.2
-      - name: linting
-        continue-on-error: true
-        run: |
-          python3 -m flake8 tango_devices.py
-          python3 -m unittest tango_devices.py
       - name: start sardana
         run: |
           /startsard.sh
@@ -34,5 +29,9 @@ jobs:
           python3 -m unittest test_sardana_motor.py
           python3 -m unittest test_example_device.py
           python3 -m unittest test_with_mock_proxy.py
-
+      - name: linting
+        # continue-on-error: true
+        run: |
+          python3 -m flake8 tango_devices.py
+          python3 -m unittest tango_devices.py
 

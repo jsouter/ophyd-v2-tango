@@ -18,6 +18,7 @@ from bluesky.protocols import Dtype
 from ophyd.v2.core import Signal, SignalR, SignalW, Comm
 from mockproxy import MockDeviceProxy
 import numpy as np
+from bluesky.run_engine import call_in_bluesky_event_loop
 # from tango import set_green_mode, get_green_mode  # type: ignore
 # from tango import GreenMode  # type: ignore
 
@@ -62,7 +63,7 @@ def set_device_proxy_class(
         print('has attr indeed')
         raise RuntimeError(
             "Function set_device_proxy_class should only be called once")
-    set_device_proxy_class.called = True
+    set_device_proxy_class.called = True  # type: ignore
     logging.warning('mypy doesn\'t like set_device_proxy_class.called')
     global _device_proxy_class
     logging.info('Resetting dev proxy dictionary')
@@ -126,7 +127,6 @@ class TangoSignal(Signal, ABC):
         self.dev_name: str
         self.signal_name: str
         ...
-
     _connected: bool = False
     _source: Optional[str] = None
 
@@ -175,7 +175,10 @@ class TangoAttr(TangoSignal):
             self._connected = True
 
 
-class _TangoMonitorable:
+class _TangoMonitorableSignal:
+    logging.warning("We should check that callbacks only run if there is a new"
+                    "value. CHANGE_EVENT could be anything")
+
     async def monitor_reading(self, callback: Callable[[EventData], None]):
         monitor = TangoSignalMonitor(self)
         await monitor(callback)
@@ -190,7 +193,7 @@ class _TangoMonitorable:
         return monitor
 
 
-class TangoAttrR(TangoAttr, _TangoMonitorable, SignalR):
+class TangoAttrR(TangoAttr, _TangoMonitorableSignal, SignalR):
 
     def _get_shape(self, reading):
         shape = []
@@ -270,7 +273,7 @@ class TangoPipe(TangoSignal):
             self._connected = True
 
 
-class TangoPipeR(TangoPipe, _TangoMonitorable, SignalR):
+class TangoPipeR(TangoPipe, _TangoMonitorableSignal, SignalR):
     logging.warning("manual timestamp for read_pipe")
 
     async def get_reading(self) -> Reading:
@@ -333,6 +336,48 @@ class TangoConnector(Protocol, Generic[TangoCommT]):
 
 
 _tango_connectors: Dict[Type[TangoComm], TangoConnector] = {}
+
+
+class ConnectIfFound:
+    # idea is to immediately set connected any signals that are found in
+    # get_attribute_list etc even without trying to read them first
+    def __new__(cls, *args, **kwargs):
+        instance = super().__new__(cls)
+        return instance(*args, **kwargs)
+
+    def __await__(self):
+        ...
+
+    async def __call__(self, comm: TangoComm,
+                       proxy: Optional[AsyncDeviceProxy] = None):
+        self.proxy = proxy or await _get_proxy_from_dict(comm.dev_name)
+        attributes = None
+        pipes = None
+        commands = None
+        for signal_name, signal_type in get_type_hints(comm).items():
+            signal = getattr(comm, signal_name)
+            if issubclass(signal_type, TangoAttr):
+                if not attributes:
+                    attributes = self.proxy.get_attribute_list()
+                signals_list = attributes
+            elif issubclass(signal_type, TangoPipe):
+                if not pipes:
+                    pipes = self.proxy.get_pipe_list()
+                signals_list = attributes
+            elif issubclass(signal_type, TangoCommand):
+                if not commands:
+                    commands = self.proxy.get_command_list()
+                signals_list = attributes
+            else:
+                raise TypeError(f"Type {signal_type} is not appropriate")
+            if signal_name in signals_list:
+                signal.signal_name = signal_name
+                signal.proxy = self.proxy
+                signal._connected = True
+                signal.dev_name = comm.dev_name
+            else:
+                raise TypeError(f"Signal with name {signal_name} not found"
+                                f" for type {signal_type}")
 
 
 class ConnectSimilarlyNamed:
@@ -519,6 +564,10 @@ class TangoSingleAttributeDevice(TangoDevice):
 
         class SingleComm(TangoComm):
             attribute: TangoAttrRW
+            # replace Position with attribute when done testing
+        logging.warning("TangoSingle__Device maybe shouldnt have"
+                        " SingleComm defined inside class, not sure"
+                        " how this namespaces with the dictionary")
 
         @tango_connector
         async def connectattribute(comm: SingleComm):
@@ -571,8 +620,24 @@ class TangoSinglePipeDevice(TangoDevice):
         return await self._describe()
 
 
+logging.warning("Should TangoMotor inherit from TangoMovableDevice?")
+
+
 class TangoMotor(TangoDevice):
     comm: TangoMotorComm  # satisfies type checker
+    logging.warning('can not use in event loop because it has to make an async'
+                    'call itself')
+
+    @property
+    def position(self):
+        reading = call_in_bluesky_event_loop(self.read())
+        name = self.get_unique_name(self.comm.position)
+        return reading[name]['value']
+        # A heuristic that describes the current position of a device as a
+        # single scalar, as opposed to the potentially multi-valued description
+        # provided by read(). Optional: bluesky itself does not use the
+        #  position attribute, but other parts of the ecosystem might.
+        # Developers are encouraged to implement this attribute where possible.
 
     async def read(self):
         return await self._read(self.comm.position)
@@ -585,6 +650,18 @@ class TangoMotor(TangoDevice):
 
     async def describe_configuration(self):
         return await self._describe(self.comm.velocity)
+
+    async def check_value(self, value):
+        # should this include timeout even if it does nothing?
+        # how do we check it's not a string
+        config = await self.comm.position.proxy.get_attribute_config(
+            self.comm.position.name)
+        if not isinstance(config.min_value, str):
+            assert value >= config.min_value, f"Value {value} is less than"\
+                                              f" min value {config.min_value}"
+        if not isinstance(config.max_value, str):
+            assert value <= config.max_value, f"Value {value} is greater than"\
+                                              f" max value {config.max_value}"
 
     # this should probably be changed, use a @timeout.setter
     def set_timeout(self, timeout):
@@ -601,11 +678,10 @@ class TangoMotor(TangoDevice):
         timeout = timeout or self.timeout
 
         async def write_and_wait():
-            position = self.comm.position
-            state = self.comm.state
-            await position.put(value)
+            await self.check_value(value)
+            await self.comm.position.put(value)
             q = asyncio.Queue()
-            monitor = await state.monitor_value(q.put_nowait)
+            monitor = await self.comm.state.monitor_value(q.put_nowait)
             while True:
                 state_value = await q.get()
                 if state_value != DevState.MOVING:
@@ -746,7 +822,7 @@ def tango_devices_main():
                                      'value': 'test2'}]))
         reading = await singlepipe.read()
         print(reading)
-    
+
     # a =call_in_bluesky_event_loop(motor1.comm.position.get_reading())
     # print("position", a)
     # call_in_bluesky_event_loop(check_pipe_configured())
@@ -762,6 +838,7 @@ def tango_devices_main():
     # set_device_proxy_class(MockDeviceProxy)
 
     print(id(motor1.comm.position.proxy) == id(motor1.comm.velocity.proxy))
+    print(motor1.position)
 
 
 if __name__ in "__main__":
