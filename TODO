@@ -1,4 +1,11 @@
-Add exception case to wait_for_not_moving for when the state is e.g. in alarm state, right now it only check if not moving
+Add exception case to wait_for_not_moving for when the state is e.g. in alarm state, right now it only check if not moving. Also can have a warning state
+
+
+https://pytango.readthedocs.io/en/v9.3.4/client_api/other.html?highlight=DevState#tango.DevState
+
+IMPORTANT: the way the deviceproxy dictionary works ? can break things in tests: see SignalTest in test_example_device.py. is that whats happening? IDK. test 2 breaks test 3
+running attr.connect directly messes stuff up for some reason
+
 <!-- implement observe monitor member functions etc -->
 More rigorous testing about async vs sync green mode overhead
 Rewrite ConnectTheRest to be callable as a function as type-checkable. Tom recommends implementing as a function and instatiating a class instance if required. Says he only implemented the protocol EpicsConnector for type checking reasons.
@@ -21,6 +28,7 @@ investigate read_attribute_asynch functions etc
 <!-- Create single attribute ophyd device class -->
 Why doesn't DevFailed exception when creating device with wrong name stop the program?
 
+Rewrite get_proxy_from_dict to be blocking so that we don't have async weirdness and creation of redundant proxy objects
 
 Need to implement stuff like TangoAttrRW[float]
 
@@ -55,6 +63,9 @@ subscribe(function): how does this work when we have multiple readable values?
 
 Can we use partials to overwrite methods for classes when we set the device proxy class i.e. use sync vs async methods.
 
+Fix the pipenv, put actual required packages etc
+fix docs+contents etc
+
 
 <!-- Attempted to implement MockDeviceProxy with subscribe_event but asyncio may not be up to the task for it: we need to return a sub_id while also keeping a background thread/process that handles the callback. Maybe a job for run_in_executor but I don't want to spend all my time on this -->
 <!-- At this point would it be better for each of the DeviceProxies to essentially be attribute proxies? (I think no, because each AttributeProxy also contains a DeviceProxy member variable. so dev proxy may be more lightweight even if it's syntactically weird) -->
@@ -72,3 +83,4 @@ asserting that we can pass Tango device to built in callbacks (not yet implement
 assert dtype of descriptor is correct
 ensure that async put and reads are non blocking
 unit tests with the RunEngine are very difficult. I can not figure out how to delete the RunEngine and then restart it..
+test alarm state exception

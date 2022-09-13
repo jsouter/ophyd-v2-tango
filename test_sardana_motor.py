@@ -8,7 +8,7 @@ import asyncio
 from PyTango import DeviceProxy, DevFailed  # type: ignore
 from PyTango.asyncio import DeviceProxy as AsyncDeviceProxy
 from ophyd.v2.core import CommsConnector
-from bluesky import RunEngine 
+from bluesky import RunEngine
 from bluesky.run_engine import call_in_bluesky_event_loop
 from typing import OrderedDict
 import random
@@ -22,7 +22,7 @@ from mockproxy import MockDeviceProxy
 RE = RunEngine()
 set_device_proxy_class(AsyncDeviceProxy)
 
-
+# @unittest.skip
 class MotorTestReliesOnSardanaDemo(unittest.IsolatedAsyncioTestCase):
     #how do we ensure the run engine stops after this test case?
     #should we do setUp to instantiate motor or not?
@@ -39,6 +39,12 @@ class MotorTestReliesOnSardanaDemo(unittest.IsolatedAsyncioTestCase):
         reading = call_in_bluesky_event_loop(test_motor.read())
         assert isinstance(reading, OrderedDict)
 
+    def test_motor_bluesky_movable(self):
+        rand_number = random.random() + 1.0
+        with CommsConnector():
+            test_motor = motor(self.dev_name, "test_motor")
+        call_in_bluesky_event_loop(test_motor.configure('velocity', 1000))
+        RE(bps.mv(test_motor, rand_number))
 
     async def test_motor_configurable(self):
         with CommsConnector():
@@ -60,11 +66,9 @@ class MotorTestReliesOnSardanaDemo(unittest.IsolatedAsyncioTestCase):
             test_motor.set_timeout(0.0000001)
             await test_motor.configure('velocity', 0.1)
         call_in_bluesky_event_loop(move_to_zero_then_reduce_velocity())
-        def do_mv():
+        with self.assertRaises(bluesky.utils.FailedStatus):
             rand_number = random.random() + 1.0
             RE(bps.mv(test_motor,rand_number))
-        
-        self.assertRaises(bluesky.utils.FailedStatus, do_mv)
         call_in_bluesky_event_loop(test_motor.configure('velocity', 1000))
 
         #need to find a better way to specify what exception

@@ -8,7 +8,7 @@ import asyncio
 from PyTango import DeviceProxy, DevFailed  # type: ignore
 from PyTango.asyncio import DeviceProxy as AsyncDeviceProxy
 from ophyd.v2.core import CommsConnector
-from bluesky import RunEngine 
+from bluesky import RunEngine
 from bluesky.run_engine import call_in_bluesky_event_loop
 from typing import OrderedDict
 import random
@@ -29,9 +29,10 @@ class MotorTestMockDeviceProxy(unittest.IsolatedAsyncioTestCase):
     #may be a complication in creating a new RunEngine. Have to close the first one perhaps?
     def setUp(self):
         self.dev_name = "mock/device/name"
-    def test_instantiate_motor(self):
         with CommsConnector():
-            test_motor = motor(self.dev_name)
+            self.test_motor = motor(self.dev_name)
+    def test_instantiate_motor(self):
+        pass
 
     def test_motor_readable(self):
         with CommsConnector():
@@ -44,7 +45,6 @@ class MotorTestMockDeviceProxy(unittest.IsolatedAsyncioTestCase):
         with CommsConnector():
             test_motor = motor(self.dev_name, "test_motor")       
         _, new_reading = call_in_bluesky_event_loop(test_motor.configure("velocity", rand_number))
-        print(f"test_motor reading is {new_reading}")
         assert new_reading["test_motor:velocity"]['value'] == rand_number
     
     async def test_cant_set_non_config_attributes(self):
@@ -63,7 +63,7 @@ class MotorTestMockDeviceProxy(unittest.IsolatedAsyncioTestCase):
     def test_count_in_RE(self):
         with CommsConnector():
             test_motor = motor(self.dev_name, "test_motor")
-        RE(count([test_motor],1))
+        RE(count([test_motor],1), print)
 
     def test_count_in_RE_with_callback_named_attribute(self):
         with CommsConnector():
@@ -75,7 +75,7 @@ class MotorTestMockDeviceProxy(unittest.IsolatedAsyncioTestCase):
         with CommsConnector():
             test_motor = motor(self.dev_name, "test_motor")
         call_in_bluesky_event_loop(test_motor.configure('velocity', 1000))
-        RE(bps.mv(test_motor,rand_number))
+        RE(bps.mv(test_motor, rand_number))
     
     async def test_motor_scans(self):
         rand_number = random.random() + 1.0

@@ -57,7 +57,7 @@ class MockDeviceProxy:
     async def read_pipe(self, pipe: str):
         pass
     async def write_attribute(self, attribute: str, value):
-        config = self.get_attribute_config(attribute)
+        config = await self.get_attribute_config(attribute)
         if config.min_value not in ('', 'Not specified'):
             if value < float(config.min_value):
                 raise ValueError
@@ -67,7 +67,7 @@ class MockDeviceProxy:
         dev_attr = await self.read_attribute(attribute)
         dev_attr.value = value
         
-    def get_attribute_config(self, attr_name: str):
+    async def get_attribute_config(self, attr_name: str):
         if attr_name in self._attr_configs:
             config = self._attr_configs[attr_name]
         else:

@@ -1,1 +1,1 @@
-.. include:: test.rst
+.. include:: actualdocs/test.rst

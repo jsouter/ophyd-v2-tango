@@ -11,7 +11,8 @@ import logging
 from typing import Callable, Generic, TypeVar, get_type_hints, Dict, Protocol,\
      Type, Coroutine, List, Optional
 from ophyd.v2.core import CommsConnector
-from bluesky.protocols import Reading, Descriptor
+from bluesky.protocols import Reading, Descriptor, Movable, Readable,\
+    Stageable, Triggerable, Configurable
 from abc import ABC, abstractmethod
 from collections import OrderedDict
 from bluesky.protocols import Dtype
@@ -59,11 +60,11 @@ def set_device_proxy_class(
     will also delete the dictionary proxy_dict which maps the Tango device
     names to proxy objects, by default this dictionary is the global
     _tango_dev_proxies. This should only be called once. '''
-    if hasattr(set_device_proxy_class, 'called'):
-        print('has attr indeed')
-        raise RuntimeError(
-            "Function set_device_proxy_class should only be called once")
-    set_device_proxy_class.called = True  # type: ignore
+    # if hasattr(set_device_proxy_class, 'called'):
+    #     print('has attr indeed')
+    #     raise RuntimeError(
+    #         "Function set_device_proxy_class should only be called once")
+    # set_device_proxy_class.called = True  # type: ignore
     logging.warning('mypy doesn\'t like set_device_proxy_class.called')
     global _device_proxy_class
     logging.info('Resetting dev proxy dictionary')
@@ -101,6 +102,7 @@ async def _get_proxy_from_dict(
 
 
 class TangoSignalMonitor(Monitor):
+    logging.warning('should we be able to use the same monitor twice?')
 
     def __init__(self, signal):
         self.proxy = signal.proxy
@@ -110,8 +112,7 @@ class TangoSignalMonitor(Monitor):
     async def __call__(self, callback=None):
         if not self.sub_id:
             self.sub_id = await self.proxy.subscribe_event(
-                self.signal_name,
-                EventType.CHANGE_EVENT, callback)
+                self.signal_name, EventType.CHANGE_EVENT, callback)
 
     def close(self):
         self.proxy.unsubscribe_event(self.sub_id)
@@ -129,6 +130,7 @@ class TangoSignal(Signal, ABC):
         ...
     _connected: bool = False
     _source: Optional[str] = None
+    name: str  # set in make_tango_signals
 
     @property
     def connected(self):
@@ -138,15 +140,15 @@ class TangoSignal(Signal, ABC):
     def source(self) -> str:
         if not self._source:
             prefix = (f'tango://{self.proxy.get_db_host()}:'
-                      f'{self.proxy.get_db_port()}/')
+                      f'{self.proxy.get_db_port()}/{self.dev_name}')
             if isinstance(self, TangoAttr):
-                self._source = prefix + f'{self.dev_name}/{self.signal_name}'
+                self._source = prefix + f'/{self.signal_name}'
             elif isinstance(self, TangoPipe):
                 self._source = prefix + \
-                    f'{self.dev_name}:{self.signal_name}(Pipe)'
+                    f':{self.signal_name}(Pipe)'
             elif isinstance(self, TangoCommand):
                 self._source = prefix + \
-                    f'{self.dev_name}:{self.signal_name}(Command)'
+                    f':{self.signal_name}(Command)'
             else:
                 raise TypeError(f'Can\'t determine source of TangoSignal'
                                 f'object of class {self.__class__}')
@@ -158,7 +160,6 @@ class TangoAttrReadError(KeyError):
 
 
 class TangoAttr(TangoSignal):
-    logging.warning('Have only tested attributes with scalar data so far')
     async def connect(self, dev_name: str, attr: str,
                       proxy: Optional[AsyncDeviceProxy] = None):
         '''Should set the member variables proxy, dev_name and signal_name.
@@ -282,9 +283,9 @@ class TangoPipeR(TangoPipe, _TangoMonitorableSignal, SignalR):
 
     async def get_descriptor(self) -> Descriptor:
         # pipe_data = self.proxy.read_pipe(self.signal_name)
-        logging.warning("Reading is a list of dictionaries. "
-                        "Setting json dtype to array, though "
-                        "'object' is more appropriate")
+        logging.warning("Reading is a list of dictionaries."
+                        " Setting json dtype to array, though"
+                        " 'object' is more appropriate")
         # if we are returning the pipe it is a name and list of blobs,
         # so dimensionality 2
         return Descriptor({"shape": [2],
@@ -354,20 +355,21 @@ class ConnectIfFound:
         attributes = None
         pipes = None
         commands = None
+        signals_list: List[str] = []
         for signal_name, signal_type in get_type_hints(comm).items():
             signal = getattr(comm, signal_name)
             if issubclass(signal_type, TangoAttr):
                 if not attributes:
                     attributes = self.proxy.get_attribute_list()
-                signals_list = attributes
+                signals_list += attributes
             elif issubclass(signal_type, TangoPipe):
                 if not pipes:
                     pipes = self.proxy.get_pipe_list()
-                signals_list = attributes
+                signals_list += pipes
             elif issubclass(signal_type, TangoCommand):
                 if not commands:
                     commands = self.proxy.get_command_list()
-                signals_list = attributes
+                signals_list += commands
             else:
                 raise TypeError(f"Type {signal_type} is not appropriate")
             if signal_name in signals_list:
@@ -473,12 +475,12 @@ class WrongNumberOfArgumentsError(TypeError):
     ...
 
 
-class TangoDevice:
+class TangoDevice(Readable, Configurable):
     logging.warning("get_unique_name should probably belong to attr."
                     " Maybe we should use a setter or something")
 
     def __init__(self, comm: TangoComm, name: Optional[str] = None):
-        self.name = name or re.sub(r'[^a-zA-Z\d]', '-', comm.dev_name)
+        self._name = name or re.sub(r'[^a-zA-Z\d]', '-', comm.dev_name)
         # replace non alphanumeric characters with dash
         # if name not set manually
         self.comm = comm
@@ -486,6 +488,10 @@ class TangoDevice:
         if self.__class__ is TangoDevice:
             raise TypeError(
                 "Can not create instance of abstract TangoComm class")
+
+    @property
+    def name(self):
+        return self._name
 
     async def _read(self, *to_read):
         od = OrderedDict()
@@ -502,22 +508,6 @@ class TangoDevice:
             name = self.get_unique_name(attr)
             od[name] = description
         return od
-
-    @abstractmethod
-    async def read(self):
-        ...
-
-    @abstractmethod
-    async def describe(self):
-        ...
-
-    @abstractmethod
-    async def read_configuration(self):
-        ...
-
-    @abstractmethod
-    async def describe_configuration(self):
-        ...
 
     def get_unique_name(self, attr):
         # return self.name + ':' + attr.signal_name
@@ -537,7 +527,7 @@ class TangoDevice:
         if len(args) % 2:  # != 0
             raise WrongNumberOfArgumentsError(
                 "configure can not parse an odd number of arguments")
-        old_reading = await self.read_configuration()
+        old_reading = await self.read_configuration()  # type: ignore
         for attr_name, value in zip(args[0::2], args[1::2]):
             attr = getattr(self.comm, attr_name)
             unique_name = self.get_unique_name(attr)
@@ -547,8 +537,8 @@ class TangoDevice:
                     "designated as configurable"
                     )
             await attr.put(value)
-        new_reading = await self.read_configuration()
-        return old_reading, new_reading
+        new_reading = await self.read_configuration()  # type: ignore
+        return (old_reading, new_reading)
 
 
 class TangoMotorComm(TangoComm):
@@ -623,7 +613,8 @@ class TangoSinglePipeDevice(TangoDevice):
 logging.warning("Should TangoMotor inherit from TangoMovableDevice?")
 
 
-class TangoMotor(TangoDevice):
+# class TangoMotor(TangoDevice, Movable, Stageable):
+class TangoMotor(TangoDevice, Movable):
     comm: TangoMotorComm  # satisfies type checker
     logging.warning('can not use in event loop because it has to make an async'
                     'call itself')
@@ -701,6 +692,7 @@ def make_tango_signals(comm: TangoComm):
     device for the purpose of generating globally unique signal names of the
     form "device_name:attr_name" to be passed to RunEngine callbacks.
     '''
+    logging.warning('setting name in make_tango_signals')
     hints = get_type_hints(comm)  # dictionary of names and types
     for name in hints:
         signal = hints[name]()
@@ -838,7 +830,7 @@ def tango_devices_main():
     # set_device_proxy_class(MockDeviceProxy)
 
     print(id(motor1.comm.position.proxy) == id(motor1.comm.velocity.proxy))
-    print(motor1.position)
+    print(motor1.comm.position.source)
 
 
 if __name__ in "__main__":

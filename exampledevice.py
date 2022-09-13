@@ -34,10 +34,27 @@ new_device_info.server = "Detector/"+sys.argv[1]
 class ExampleDevice(Device):
 
     _array = np.array([[1, 2], [3, 4]])
+    _limitedvalue = 0.5
     randomvalue = attribute(label="randomvalue", dtype=float,
                             access=AttrWriteType.READ,
                             min_value=0, max_value=1,
                             fget="get_random_value")
+
+    def get_random_value(self):
+        return random.random()
+
+    limitedvalue = attribute(label="limitedvalue", dtype=float,
+                            access=AttrWriteType.READ_WRITE,
+                            min_value=0, max_value=1,
+                            min_warning = 0.3, max_warning = 0.7,
+                            min_alarm = 0.2, max_alarm = 0.8,
+                            fget="get_limitedvalue", fset = "set_limitedvalue")
+    
+    def get_limitedvalue(self):
+        return self._limitedvalue
+
+    def set_limitedvalue(self,value):
+        self._limitedvalue = value
 
     def get_random_value(self):
         return random.random()
@@ -61,7 +78,7 @@ class ExampleDevice(Device):
         return self._pipe
 
     def write_my_pipe(self, value):
-        self._pipe = value 
+        self._pipe = value
 
     @command(dtype_in=float, dtype_out=float)
     def doubler(self, value):
