@@ -518,12 +518,6 @@ class TangoDevice(Readable, Configurable):
         read_configuration. Pass an arbitrary number of pairs of args where the
         first arg is the attribute name as a string and the second arg is the
         new value of the attribute'''
-        logging.warning('Need to decide whether we look for the Python'
-                        'attribute name or Tango attribute name')
-        logging.warning('single pipe returns empty ordereddicts because'
-                        ' we are counting the pipe as a read field not a'
-                        ' read_config field')
-
         if len(args) % 2:  # != 0
             raise WrongNumberOfArgumentsError(
                 "configure can not parse an odd number of arguments")
@@ -781,7 +775,7 @@ def tango_devices_main():
             RE(count(scan_args, 11))
             print('count' + str(i+1), time.time() - thetime)
 
-    # scan1()
+    scan1()
     # scan2()
 
     with CommsConnector():
@@ -828,10 +822,10 @@ def tango_devices_main():
 
     # set_device_proxy_class(MockDeviceProxy)
     # set_device_proxy_class(MockDeviceProxy)
-
+    print(id(motor1.comm.position.proxy), id(motor1.comm.velocity.proxy), id(motor1.comm.state.proxy), id(motor1.comm.stop.proxy))
     print(id(motor1.comm.position.proxy) == id(motor1.comm.velocity.proxy))
     print(motor1.comm.position.source)
-
+    print(_tango_dev_proxies)
 
 if __name__ in "__main__":
     tango_devices_main()

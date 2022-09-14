@@ -33,3 +33,4 @@ ENV PKG_CONFIG_PATH=/usr/local/tango/lib/pkgconfig/
 RUN pip install PyTango
 RUN pip install ipython jupyter matplotlib flake8 \
 git+https://github.com/bluesky/bluesky git+https://github.com/dls-controls/ophyd
+

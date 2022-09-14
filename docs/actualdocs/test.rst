@@ -16,19 +16,5 @@ Each of the attributes, pipes and commands are implemented as Ophyd Signals. Eac
 
 The TangoAttr and TangoPipe connect method verifies that the signal is available by attempting to read from it via the DeviceProxy, discarding the result. The TangoCommand connect method simply checks to see if a command with the name self.signal_name exists in the list of the commands belonging to the device, provided by the self.proxy.get_command_list() method.
 
-As in the EPICS implementation in ophyd.v2, groups of Ophyd signals are collected in Comm classes (here, TangoComm).
-Subclasses of TangoComm made for specific devices (such as a simulated motor device) need only contain type hints for the signals that are required to interact with Bluesky plans.
-::
-
-    class TangoMotorComm(TangoComm):
-        position: TangoAttrRW
-        velocity: TangoAttrRW
-        state: TangoAttrRW
-        stop: TangoCommand
-
-
-At initialisation, the TangoComm inherits self.dev_name ("domain/family/member") from an argument passed to it. A function make_tango_signals loops over the type hints, and instantiates (not connects) a member variable of that hinted class. So, motor_comm = TangoMotorComm() would have an attribute motor_comm.position of type TangoAttrRW. Then, the TangoComm initialisation method finds the connector method needed to connect all the signals belonging to the Comm and schedules the connection with the CommsConnector from ophyd.v2.core.
-
-CommsConnector() should be called as context manager whenever a TangoComm (or higher level device containing a TangoComm object) is instantiated; upon exit from the CM the Comm's connect method gets called.
 
 

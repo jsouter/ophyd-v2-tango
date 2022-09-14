@@ -34,6 +34,7 @@ Need to implement stuff like TangoAttrRW[float]
 
 set_device_proxy_class, could make it look more like _WithPvCls 
 
+split docs into user+developer stuff
 
 Decide whether "read pipe" should return the name + list of blobs or just list of blobs
 
