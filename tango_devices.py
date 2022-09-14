@@ -11,15 +11,17 @@ import logging
 from typing import Callable, Generic, TypeVar, get_type_hints, Dict, Protocol,\
      Type, Coroutine, List, Optional
 from ophyd.v2.core import CommsConnector
-from bluesky.protocols import Reading, Descriptor, Movable, Readable,\
-    Stageable, Triggerable, Configurable
+from bluesky.protocols import (Reading, Descriptor, Movable, Readable,
+                            #    Stageable, Triggerable,
+                               Configurable)
 from abc import ABC, abstractmethod
-from collections import OrderedDict
+# from collections import OrderedDict
 from bluesky.protocols import Dtype
 from ophyd.v2.core import Signal, SignalR, SignalW, Comm
 from mockproxy import MockDeviceProxy
 import numpy as np
 from bluesky.run_engine import call_in_bluesky_event_loop
+from ophyd.v2.core import SignalCollection
 # from tango import set_green_mode, get_green_mode  # type: ignore
 # from tango import GreenMode  # type: ignore
 
@@ -43,7 +45,7 @@ def _get_dtype(attribute) -> Dtype:
     else:
         raise NotImplementedError(
             f"dtype not implemented for type {value_class}"
-            f" with attribute {attribute.name}"
+            f" with attribute {attribute.signal_name}"
             )
 
 
@@ -278,7 +280,7 @@ class TangoPipeR(TangoPipe, _TangoMonitorableSignal, SignalR):
     logging.warning("manual timestamp for read_pipe")
 
     async def get_reading(self) -> Reading:
-        pipe_data = self.proxy.read_pipe(self.signal_name)
+        pipe_data = await self.proxy.read_pipe(self.signal_name)
         return Reading({"value": pipe_data, "timestamp": TimeVal().now()})
 
     async def get_descriptor(self) -> Descriptor:
@@ -301,8 +303,7 @@ class TangoPipeW(TangoPipe, SignalW):
 
     async def put(self, value):
         logging.warning('no longer needs to be async')
-        # await self.proxy.write_pipe(self.signal_name, value)
-        self.proxy.write_pipe(self.signal_name, value)
+        await self.proxy.write_pipe(self.signal_name, value)
 
 
 class TangoPipeRW(TangoPipeR, TangoPipeW):
@@ -474,45 +475,7 @@ def tango_connector(connector, comm_cls=None):
 class WrongNumberOfArgumentsError(TypeError):
     ...
 
-
-class TangoDevice(Readable, Configurable):
-    logging.warning("get_unique_name should probably belong to attr."
-                    " Maybe we should use a setter or something")
-
-    def __init__(self, comm: TangoComm, name: Optional[str] = None):
-        self._name = name or re.sub(r'[^a-zA-Z\d]', '-', comm.dev_name)
-        # replace non alphanumeric characters with dash
-        # if name not set manually
-        self.comm = comm
-        self.parent = None
-        if self.__class__ is TangoDevice:
-            raise TypeError(
-                "Can not create instance of abstract TangoComm class")
-
-    @property
-    def name(self):
-        return self._name
-
-    async def _read(self, *to_read):
-        od = OrderedDict()
-        for attr in to_read:
-            reading = await attr.get_reading()
-            name = self.get_unique_name(attr)
-            od[name] = reading
-        return od
-
-    async def _describe(self, *to_desc):
-        od = OrderedDict()
-        for attr in to_desc:
-            description = await attr.get_descriptor()
-            name = self.get_unique_name(attr)
-            od[name] = description
-        return od
-
-    def get_unique_name(self, attr):
-        # return self.name + ':' + attr.signal_name
-        return self.name + ':' + attr.name
-
+class TangoConfigurable(Configurable):
     async def configure(self, *args):
         '''Returns old result of read_configuration and new result of
         read_configuration. Pass an arbitrary number of pairs of args where the
@@ -533,6 +496,77 @@ class TangoDevice(Readable, Configurable):
             await attr.put(value)
         new_reading = await self.read_configuration()  # type: ignore
         return (old_reading, new_reading)
+
+
+class TangoDevice(Readable, TangoConfigurable):
+    logging.warning("get_unique_name should probably belong to attr."
+                    " Maybe we should use a setter or something")
+
+    def __init__(self, comm: TangoComm, name: Optional[str] = None):
+        self.name = name or re.sub(r'[^a-zA-Z\d]', '-', comm.dev_name)
+        # replace non alphanumeric characters with dash
+        # if name not set manually
+        self.comm = comm
+        self.parent = None
+        self._signal_prefix = self.name + "-"
+        if self.__class__ is TangoDevice:
+            raise TypeError(
+                "Can not create instance of abstract TangoComm class")
+
+    @property
+    def conf_signals(self):
+        if hasattr(self, '_conf_signals'):
+            return self._conf_signals
+        else:
+            return SignalCollection()
+
+    @property
+    def read_signals(self):
+        if hasattr(self, '_read_signals'):
+            return self._read_signals
+        else:
+            return SignalCollection()
+
+    @property
+    def name(self):
+        return self._name
+
+    @name.setter
+    def name(self, name: str):
+        self._name = name
+
+    async def read(self):
+        return await self.read_signals.read(self._signal_prefix)
+
+    async def describe(self):
+        return await self.read_signals.describe(self._signal_prefix)
+
+    async def read_configuration(self):
+        return await self.conf_signals.read(self._signal_prefix)
+
+    async def describe_configuration(self):
+        return await self.conf_signals.describe(self._signal_prefix)
+
+    # async def _read(self, *to_read):
+    #     od = OrderedDict()
+    #     for attr in to_read:
+    #         reading = await attr.get_reading()
+    #         name = self.get_unique_name(attr)
+    #         od[name] = reading
+    #     return od
+
+    # async def _describe(self, *to_desc):
+    #     logging.warning("_describe is depracated")
+    #     od = OrderedDict()
+    #     for attr in to_desc:
+    #         description = await attr.get_descriptor()
+    #         name = self.get_unique_name(attr)
+    #         od[name] = description
+    #     return od
+
+    def get_unique_name(self, attr):
+        # return self.name + ':' + attr.signal_name
+        return self._signal_prefix + attr.name
 
 
 class TangoMotorComm(TangoComm):
@@ -558,27 +592,18 @@ class TangoSingleAttributeDevice(TangoDevice):
             await comm.attribute.connect(dev_name, attr_name)
 
         self.comm = SingleComm(dev_name)
+        self._read_signals = SignalCollection(**{name: self.comm.attribute})
+        print(self._read_signals._signals)
         super().__init__(self.comm, name)
-
-    async def read(self):
-        reading = await self.comm.attribute.get_reading()
-        return OrderedDict({self.name: reading})
-
-    async def describe(self):
-        descriptor = await self.comm.attribute.get_descriptor()
-        return OrderedDict({self.name: descriptor})
-
-    async def read_configuration(self):
-        return await self._read()
-
-    async def describe_configuration(self):
-        return await self._describe()
+        self._signal_prefix = ""
 
 
-class TangoSinglePipeDevice(TangoDevice):
+
+    #have to set read_prefix to "" instead of "self.name+"-""
+
+class TangoSinglePipeDevice(TangoDevice, Configurable):
     def __init__(self, dev_name, pipe_name, name: Optional[str] = None):
         name = name or pipe_name
-
         class SinglePipeComm(TangoComm):
             pipe: TangoPipeRW
 
@@ -587,21 +612,19 @@ class TangoSinglePipeDevice(TangoDevice):
             await comm.pipe.connect(dev_name, pipe_name)
 
         self.comm = SinglePipeComm(dev_name)
+        self._conf_signals = SignalCollection(**{name: self.comm.pipe})
         super().__init__(self.comm, name)
+        self._signal_prefix = ""
 
-    async def read(self):
-        reading = await self.comm.pipe.get_reading()
-        return OrderedDict({self.name: reading})
-
-    async def describe(self):
-        descriptor = await self.comm.pipe.get_descriptor()
-        return OrderedDict({self.name: descriptor})
-
-    async def read_configuration(self):
-        return await self._read()
-
-    async def describe_configuration(self):
-        return await self._describe()
+    async def configure(self, value):
+        '''Returns old result of read_configuration and new result of
+           read_configuration. Pass a single argument, the new value for
+           the Pipe.'''
+        
+        old_reading = await self.read_configuration()  # type: ignore
+        await self.comm.pipe.put(value)
+        new_reading = await self.read_configuration()  # type: ignore
+        return (old_reading, new_reading)
 
 
 logging.warning("Should TangoMotor inherit from TangoMovableDevice?")
@@ -609,10 +632,15 @@ logging.warning("Should TangoMotor inherit from TangoMovableDevice?")
 
 # class TangoMotor(TangoDevice, Movable, Stageable):
 class TangoMotor(TangoDevice, Movable):
-    comm: TangoMotorComm  # satisfies type checker
+
+    def __init__(self, comm: TangoMotorComm, name: str):
+        super().__init__(comm, name)
+        # change this
+        self._read_signals = SignalCollection(position=self.comm.position)
+        self._conf_signals = SignalCollection(velocity=self.comm.velocity)
+
     logging.warning('can not use in event loop because it has to make an async'
                     'call itself')
-
     @property
     def position(self):
         reading = call_in_bluesky_event_loop(self.read())
@@ -624,17 +652,18 @@ class TangoMotor(TangoDevice, Movable):
         #  position attribute, but other parts of the ecosystem might.
         # Developers are encouraged to implement this attribute where possible.
 
-    async def read(self):
-        return await self._read(self.comm.position)
+    # async def read(self):
+    #     print(self._read_signals)
+    #     return await self._read(self.comm.position)
 
-    async def describe(self):
-        return await self._describe(self.comm.position)
+    # async def describe(self):
+    #     return await self._describe(self.comm.position)
 
-    async def read_configuration(self):
-        return await self._read(self.comm.velocity)
+    # async def read_configuration(self):
+    #     return await self._read(self.comm.velocity)
 
-    async def describe_configuration(self):
-        return await self._describe(self.comm.velocity)
+    # async def describe_configuration(self):
+    #     return await self._describe(self.comm.velocity)
 
     async def check_value(self, value):
         # should this include timeout even if it does nothing?
@@ -740,13 +769,14 @@ def tango_devices_main():
         velocity = 1000
         for m in motors:
             call_in_bluesky_event_loop(m.configure('velocity', velocity))
+
             # m.set_timeout(0.0001)
         for i in range(4):
             scan_args = []
             table_args = []
             for j in range(i+1):
                 scan_args += [motors[j], 0, 1]
-                table_args += ['motor'+str(j+1)+':position']
+                table_args += ['motor'+str(j+1)+'-position']
             thetime = time.time()
             RE(scan([], *scan_args, 11), LiveTable(table_args))
             # RE(scan([], *scan_args, 11))
@@ -769,13 +799,13 @@ def tango_devices_main():
             table_args = []
             for j in range(i+1):
                 scan_args += [motors[j]]
-                table_args += ['motor'+str(j+1)+':position']
+                table_args += ['motor'+str(j+1)+'-position']
             thetime = time.time()
             # RE(count(scan_args,11), LiveTable(table_args))
             RE(count(scan_args, 11))
             print('count' + str(i+1), time.time() - thetime)
 
-    scan1()
+    # scan1()
     # scan2()
 
     with CommsConnector():
@@ -791,27 +821,31 @@ def tango_devices_main():
     # print(reading)
     # print(call_in_bluesky_event_loop(motor1.configure('velocity',100)))
 
+    async def check_single_attr():
+        reading = await single.read()
+        desc = await single.describe()
+        print("reading: ", reading, "desc: ", desc)
+
     async def check_pipe_configured():
-        reading = await singlepipe.read()
-        print(reading)
-        await singlepipe.configure('pipe', ('hello',
-                                   [{'name': 'test', 'dtype': DevString,
-                                     'value': 'how are you'},
-                                    {'name': 'test2', 'dtype': DevString,
-                                     'value': 'test2'}]))
-        reading = await singlepipe.read()
-        print(reading)
-        await singlepipe.configure('pipe', ('hello',
-                                   [{'name': 'test', 'dtype': DevString,
-                                     'value': 'yeah cant complain'},
-                                    {'name': 'test2', 'dtype': DevString,
-                                     'value': 'test2'}]))
-        reading = await singlepipe.read()
-        print(reading)
+        await singlepipe.configure(('hello',
+            [{'name': 'test', 'dtype': DevString,
+                'value': 'how are you'},
+             {'name': 'test2', 'dtype': DevString,
+                'value': 'test2'}]))
+        old, new = await singlepipe.configure(('hello',
+            [{'name': 'test', 'dtype': DevString,
+              'value': 'yeah cant complain'},
+             {'name': 'test2', 'dtype': DevString,
+              'value': 'test2'}]))
+        print(old, new)
+        # nonconfigreading = await singlepipe.read_configuration()
+        # print(nonconfigreading)
+
 
     # a =call_in_bluesky_event_loop(motor1.comm.position.get_reading())
     # print("position", a)
-    # call_in_bluesky_event_loop(check_pipe_configured())
+    call_in_bluesky_event_loop(check_single_attr())
+    call_in_bluesky_event_loop(check_pipe_configured())
     # print(get_green_mode())
     # monitor1 = call_in_bluesky_event_loop(
     # motor1.comm.position.monitor_reading(print))
@@ -822,10 +856,10 @@ def tango_devices_main():
 
     # set_device_proxy_class(MockDeviceProxy)
     # set_device_proxy_class(MockDeviceProxy)
-    print(id(motor1.comm.position.proxy), id(motor1.comm.velocity.proxy), id(motor1.comm.state.proxy), id(motor1.comm.stop.proxy))
-    print(id(motor1.comm.position.proxy) == id(motor1.comm.velocity.proxy))
-    print(motor1.comm.position.source)
-    print(_tango_dev_proxies)
+    # print(id(motor1.comm.position.proxy), id(motor1.comm.velocity.proxy), id(motor1.comm.state.proxy), id(motor1.comm.stop.proxy))
+    # print(id(motor1.comm.position.proxy) == id(motor1.comm.velocity.proxy))
+    # print(motor1.comm.position.source)
+    # print(_tango_dev_proxies)
 
 if __name__ in "__main__":
     tango_devices_main()

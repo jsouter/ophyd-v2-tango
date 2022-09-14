@@ -15,7 +15,7 @@ import random
 import bluesky.plan_stubs as bps
 from bluesky.plans import count, scan
 from PyTango._tango import AttrQuality
-
+import itertools
 
 
 RE = RunEngine()
@@ -143,13 +143,12 @@ class ExampleDeviceTest(unittest.IsolatedAsyncioTestCase):
 
     def test_read_write_array(self):
         async def read_write():
-            array = await self.device.comm.array.get_value()
-            print("array: ", array)
-            array = [[random.random(), random.random()],
-                     [random.random(), random.random()]]
+            array = [[random.randint(1, 10), random.randint(1, 10)],
+                     [random.randint(1, 10), random.randint(1, 10)]]
             await self.device.comm.array.put(array)
-            array = await self.device.comm.array.get_value()
-            # print("array: ", array)
+            array2 = await self.device.comm.array.get_value()
+            for i, j in itertools.product(range(2),range(2)):
+                assert array[i][j] == array[i][j]
         call_in_bluesky_event_loop(read_write())
 
     def test_valid_quality(self):
