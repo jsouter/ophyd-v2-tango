@@ -32,7 +32,7 @@ Rewrite get_proxy_from_dict to be blocking so that we don't have async weirdness
 
 Need to implement stuff like TangoAttrRW[float]
 
-set_device_proxy_class, could make it look more like _WithPvCls 
+set_device_proxy_class, could make it look more like _WithPvCls
 
 split docs into user+developer stuff
 

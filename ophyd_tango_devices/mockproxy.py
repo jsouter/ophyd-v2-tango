@@ -30,7 +30,7 @@ class MockDeviceProxy:
         print('Future should be pending, this returns it as done. close enough??')
         self = super().__new__(cls)
         self._name = obj
-        self._class = 'MockClass'
+        self._class = 'MockDeviceProxy'
         self._port_num = 10000
         self._attributes += ['Position', 'Velocity', 'State']
         print('setting to 10000 to test. prob a better way to do this')

@@ -1,8 +1,9 @@
+# type: ignore
 from typing import OrderedDict
 # import sys
 # sys.path.append('../src/tangophyd')
-from tango_devices import TangoComm, TangoDeviceNotFoundError, TangoPipeRW,TangoAttrRW, TangoAttrR, TangoCommand, TangoSignal, \
-    TangoAttr, motor, set_device_proxy_class, TangoSinglePipeDevice, TangoDevice
+from ophyd_tango_devices.tango_devices import *
+from ophyd_tango_devices.signals import *
 
 import unittest
 import asyncio
@@ -16,9 +17,11 @@ import bluesky.plan_stubs as bps
 from bluesky.plans import count, scan
 from PyTango._tango import AttrQuality
 import itertools
+from ophyd.v2.core import SignalCollection
 
 
 RE = RunEngine()
+
 set_device_proxy_class(AsyncDeviceProxy)
 # should do some tests that operate on the Comm level etc too
 # defaults to ConnectTheRest without connector
@@ -33,20 +36,9 @@ class ExampleComm(TangoComm):
 
 
 class ExampleDevice(TangoDevice):
-    comm: ExampleComm  # satisfies type checker
-
-    async def read(self):
-        return await self._read(self.comm.randomvalue)
-
-    async def describe(self):
-        return await self._describe(self.comm.randomvalue)
-
-    async def read_configuration(self):
-        return await self._read(self.comm.my_pipe)
-
-    async def describe_configuration(self):
-        return await self._describe(self.comm.my_pipe)
-
+    def __init__(self, comm: ExampleComm):
+        super().__init__(comm)
+        self._read_signals = SignalCollection(randomvalue= self.comm.randomvalue, limitedvalue= self.comm.limitedvalue)
 
 def example_device(dev_name):
     c = ExampleComm(dev_name)
@@ -183,3 +175,5 @@ class ExampleDeviceTest(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(DevFailed):
                 await self.device.comm.limitedvalue.put(float(config.min_value) - 1)
         call_in_bluesky_event_loop(do_move_get_quality())
+
+# del RE

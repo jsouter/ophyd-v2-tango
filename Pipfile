@@ -1,0 +1,15 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+ophyd = {git = "https://github.com/dls-controls/ophyd"}
+bluesky = {git = "https://github.com/bluesky/bluesky"}
+pytango = "*"
+ophyd-tango-devices = {path = "."}
+
+[dev-packages]
+
+[requires]
+python_version = "3.9"

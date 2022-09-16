@@ -21,14 +21,30 @@ jobs:
     steps:
       - name: checkout repo
         uses: actions/checkout@v3.0.2
-      - name: start sardana
+      # - name: pipenv install
+      #   run: |
+      #     python3 -m pip install --upgrade pipenv wheel
+      #     pipenv install . 
+      #     pipenv shell
+      - name: pip install
         run: |
-          /startsard.sh
-          sleep 10
+          pip install . 
+      - name: mock proxy unit tests
+        run: |
+          python3 -m unittest tests/test_with_mock_proxy.py
+      - name: start tango, run example device tests
+        run: |
+          service mariadb start
+          /usr/local/tango/bin/tango start
           python3 exampledevice.py &
-          python3 -m unittest test_sardana_motor.py
-          python3 -m unittest test_example_device.py
-          python3 -m unittest test_with_mock_proxy.py
+          sleep 10
+          python3 -m unittest tests/test_example_device.py
+      - name: start sardana and run tests
+        run: |
+          # /startsard.sh
+          yes y | Sardana demo &
+          sleep 10
+          python3 -m unittest tests/test_sardana_motor.py
       - name: linting
         # continue-on-error: true
         run: |

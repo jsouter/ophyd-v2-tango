@@ -1,0 +1,7 @@
+Metadata-Version: 2.1
+Name: ophyd-tango-devices
+Version: 0.1.0
+Summary: Tools to create Tango devices compatible with Ophyd/Bluesky
+Home-page: https://github.com/jsouter/ophyd-v2-tango
+Author: James Souter
+Author-email: james.souter@diamond.ac.uk
