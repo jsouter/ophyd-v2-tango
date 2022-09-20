@@ -20,16 +20,9 @@ db = Database()
 new_device_info = DbDevInfo()
 new_device_info._class = "ExampleDevice"
 new_device_info.server = "ExampleDevice/"+sys.argv[1]
-
-new_devices = ['tango/example/device']
-
-for dev in new_devices:
-    print("Creating device: %s" % dev)
-    new_device_info.name = dev
-    db.add_device(new_device_info)
-
-new_device_info._class = "Detector"
-new_device_info.server = "Detector/"+sys.argv[1]
+new_device_info.name = 'tango/example/device'
+print("Creating device: %s" % new_device_info.name)
+db.add_device(new_device_info)
 
 class ExampleDevice(Device):
 

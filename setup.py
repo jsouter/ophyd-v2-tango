@@ -7,6 +7,6 @@ setup(name='ophyd_tango_devices',
       url = 'https://github.com/jsouter/ophyd-v2-tango',
       author = 'James Souter',
       author_email=  'james.souter@diamond.ac.uk',
-      packages = ['ophyd_tango_devices'],
+      packages = ['src/ophyd_tango_devices'],
       install_requires = ['ophyd', 'bluesky'])
     #   install_requires = ['ophyd', 'bluesky', 'tango'])

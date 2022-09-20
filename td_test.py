@@ -1,5 +1,5 @@
-from ophyd_tango_devices.tango_devices import *
-from ophyd_tango_devices.signals import *
+from src.ophyd_tango_devices.tango_devices import *
+from src.ophyd_tango_devices.signals import *
 from ophyd.v2.core import CommsConnector
 
 
@@ -27,46 +27,60 @@ def tango_devices_main():
         motors = [motor1, motor2, motor3, motor4]
 
     def scan1():
-        velocity = 1000
-        for m in motors:
-            call_in_bluesky_event_loop(m.configure('velocity', velocity))
+        async def move_to_start_and_set_vel(motors_to_move, set_vel):
+            for m in motors_to_move:
+                await m.configure('velocity', 100000)
+                await m.set(0)
+                # reading = await m.read()
+                # print(reading)
+                await m.configure('velocity', set_vel)
+
+        for vel in [100000]:
+            velocity = vel
+
 
             # m.set_timeout(0.0001)
-        for i in range(4):
-            scan_args = []
-            table_args = []
-            for j in range(i+1):
-                scan_args += [motors[j], 0, 1]
-                table_args += ['motor'+str(j+1)+'-position']
-            thetime = time.time()
-            RE(scan([], *scan_args, 11), LiveTable(table_args))
-            # RE(scan([], *scan_args, 11))
-            print('scan' + str(i+1), time.time() - thetime)
+            print("velocity: ", velocity)
+            for i in range(4):
+                scan_args = []
+                table_args = []
+                for j in range(i+1):
+                    scan_args += [motors[j], 0, 1]
+                    scan_motors = motors[:j+1]
+                for m in scan_motors:
+                    table_args += [m.name+'-position']
+                # print(scan_motors)
+                # print(table_args)
+                # print(scan_args)
+                call_in_bluesky_event_loop(move_to_start_and_set_vel(scan_motors, velocity))
+                thetime = time.time()
+                # RE(scan([], *scan_args, 101), LiveTable(table_args))
+                RE(scan([], *scan_args, 101))
+                print(time.time() - thetime)
+                # print('scan' + str(i+1), time.time() - thetime)
 
     def scan2():
-        print('with 2 motors:')
-        for i in range(10):
-            thetime = time.time()
-            RE(scan([], motor1, 0, 1, motor2, 0, 1, 10*i+1))
-            print('steps' + str(10*i+1), time.time() - thetime)
-        print('with 4 motors:')
-        for i in range(10):
-            thetime = time.time()
-            RE(scan([], motor1, 0, 1, motor2, 0, 1, motor3,
-                    0, 1, motor4, 0, 1, 10*i+1))
-            print('steps' + str(10*i+1), time.time() - thetime)
-        for i in range(4):
-            scan_args = []
-            table_args = []
-            for j in range(i+1):
-                scan_args += [motors[j]]
-                table_args += ['motor'+str(j+1)+'-position']
-            thetime = time.time()
-            # RE(count(scan_args,11), LiveTable(table_args))
-            RE(count(scan_args, 11))
-            print('count' + str(i+1), time.time() - thetime)
+        for countnum in [100,200,300,400,500,600,700,800,900,1000]:
+            print(countnum, "remember we are dividing time by countnum and num motors")
+            for i in range(4):
+                scan_args = []
+                table_args = []
+                for j in range(i+1):
+                    scan_motors = motors[:j+1]
+                    for m in scan_motors:
+                        table_args += [m.name+'-position']
+                        scan_args += [m]
+                # print(len(scan_motors))
+                thetime = time.time()
+                # RE(count(scan_args,countnum), LiveTable(table_args))
+                RE(count(scan_args,countnum))
+                # RE(count(scan_args, 11))
+                # print((time.time() - thetime)/countnum/len(scan_motors))
+                # print(scan_args)
+                print((time.time() - thetime))
 
-    scan1()
+
+    # scan1()
     # scan2()
 
     with CommsConnector():
@@ -105,7 +119,7 @@ def tango_devices_main():
         # print(nonconfigreading)
 
 
-    # call_in_bluesky_event_loop(check_single_attr())
+    call_in_bluesky_event_loop(check_single_attr())
     # call_in_bluesky_event_loop(check_pipe_configured())
 
     # print(get_green_mode())
@@ -124,7 +138,25 @@ def tango_devices_main():
     # print(_tango_dev_proxies)
     with CommsConnector():
         my_doubler = TangoSingleCommandDevice("tango/example/device", "doubler", "doobler")
-    my_doubler.execute_command(2)
+    four = my_doubler.execute_command(2)
+    print(four)
+
+    class ExampleComm(TangoComm):
+        randomvalue: TangoAttrRW
+        my_pipe: TangoPipeRW
+
+    class SetAllReadableAttributesToReadSignals(TangoDevice):
+        @property
+        def read_signals(self):
+            signals = {k: v for k, v in self.comm._signals_.items()
+                    if isinstance(v, (TangoAttrR, TangoPipeR))}
+            return SignalCollection(**signals)
+
+    with CommsConnector():
+        comm = ExampleComm("tango/example/device")
+        heyo = SetAllReadableAttributesToReadSignals(comm)
+    RE(count([heyo]), LiveTable(['tango-example-device-randomvalue']))
 
 if __name__ in "__main__":
     tango_devices_main()
+
