@@ -27,7 +27,7 @@ from .signals import (_get_proxy_from_dict, TangoAttr,  # type: ignore
 class WrongNumberOfArgumentsError(TypeError):
     ...
 
-
+# Can delete the configure method as no protocol for it
 class TangoConfigurable(Configurable):
     async def configure(self, *args):
         '''Returns old result of read_configuration and new result of
@@ -50,7 +50,7 @@ class TangoConfigurable(Configurable):
         new_reading = await self.read_configuration()  # type: ignore
         return (old_reading, new_reading)
 
-
+# Maybe put all this in Motor
 class TangoDevice(Readable, TangoConfigurable):
 
     def __init__(self, comm: TangoComm, name: Optional[str] = None):
@@ -102,6 +102,15 @@ class TangoMotorComm(TangoComm):
     velocity: TangoAttrRW
     state: TangoAttrRW
     stop: TangoCommand
+
+from ophyd.v2.core import SignalDevice
+def make_single_attribute_device() -> SignalDevice:
+    attribute = TangoAttrRW()
+    await attribute.connect()
+    async def connect(
+            self, dev_name: str, signal_name: str,
+            proxy: Optional[AsyncDeviceProxy] = None):
+    return SignalDevice(signal, name)
 
 
 class TangoSingleAttributeDevice(TangoDevice):
