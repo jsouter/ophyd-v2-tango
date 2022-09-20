@@ -307,18 +307,23 @@ class TangoPipeRW(TangoPipeR, TangoPipeW):
 
 class TangoComm(Comm):
     def __init__(self, dev_name: str):
-        self.proxy: AsyncDeviceProxy  # should be set by a tangoconnector
+        self._proxy_: AsyncDeviceProxy  # should be set by a tangoconnector
         if self.__class__ is TangoComm:
             raise TypeError(
                 "Can not create instance of abstract TangoComm class")
-        self.dev_name = dev_name
+        self._dev_name = dev_name
         self._signals_ = make_tango_signals(self)
         #this is weird, fix
         self._connector = get_tango_connector(self)
         CommsConnector.schedule_connect(self)
 
     async def _connect_(self):
-        await self._connector(self)
+        # Here you could check for simulation mode and put in the mock proxy
+        if CommsConnector.in_sim_mode():
+            proxy = SimDeviceProxy()
+        else:
+            proxy = await AsyncDeviceProxy(self._dev_name)
+        await self._connector(self, proxy)
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}(dev_name={self.dev_name!r})"
@@ -343,18 +348,40 @@ def make_tango_signals(comm: TangoComm):
     return signals
         
 
+class DeviceProxyProtocol(Protocol):
+    pass
+
+
 
 TangoCommT = TypeVar("TangoCommT", bound=TangoComm, contravariant=True)
 
 
 class TangoConnector(Protocol, Generic[TangoCommT]):
 
-    async def __call__(self, comm: TangoCommT):
+    async def __call__(self, comm: TangoCommT, proxy: DeviceProxyProtocol):
         ...
 
 
 _tango_connectors: Dict[Type[TangoComm], TangoConnector] = {}
+ 
 
+class Proxy(ABC):
+    @abstractmethod
+    async def connect(self) -> None:
+        ...
+    @abstractmethod
+    def get_attribute_list(self) -> List[str]:
+        """What it does"""
+    @abstractmethod
+    def get_pipe_list(self) -> List[str]:
+        """What it does"""
+    @abstractmethod
+    def get_command_list(self) -> List[str]:
+        """What it does"""
+    @abstractmethod
+    def get_attribute(self, attr_name: str) -> Any:
+        """What it does"""
+    
 
 class ConnectIfFound:
     # idea is to immediately set connected any signals that are found in
@@ -474,15 +501,19 @@ class ConnectSimilarlyNamed:
                 f" for type {signal_type.__name__}")
 
 
-def get_tango_connector(comm: TangoComm) -> TangoConnector:
+def get_tango_connector(comm: TangoComm) -> TangoConnector:   
     if type(comm) in _tango_connectors:  # .keys()
         return _tango_connectors[type(comm)]
     else:
         logging.info('Defaulting to "ConnectSimilarlyNamed()"')
+        # Suggest ConnectSimilarlyNamed().connect
+        # or connect_similarly_named with some utility functions
         return ConnectSimilarlyNamed
 
 
-def tango_connector(connector, comm_cls=None):
+
+
+def tango_connector(connector: TangoConnector, comm_cls=None):
     if comm_cls is None:
         comm_cls = get_type_hints(connector)["comm"]
     _tango_connectors[comm_cls] = connector
