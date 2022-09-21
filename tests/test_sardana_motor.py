@@ -1,6 +1,6 @@
 from typing import OrderedDict
 # import sys
-# sys.path.append('../src/tangophyd')
+# sys.path.append('../src/')
 from ophyd_tango_devices.tango_devices import *
 from ophyd_tango_devices.signals import *
 
@@ -20,7 +20,6 @@ import bluesky.utils
 
 
 RE = RunEngine()
-set_device_proxy_class(AsyncDeviceProxy)
 
 # @unittest.skip
 class MotorTestReliesOnSardanaDemo(unittest.IsolatedAsyncioTestCase):
@@ -59,8 +58,7 @@ class MotorTestReliesOnSardanaDemo(unittest.IsolatedAsyncioTestCase):
         call_in_bluesky_event_loop(move_to_zero_then_reduce_velocity())
         with self.assertRaises(bluesky.utils.FailedStatus):
             rand_number = random.random() + 1.0
-            RE(bps.mv(self.test_motor,rand_number))
+            RE(bps.mv(self.test_motor, rand_number))
         call_in_bluesky_event_loop(self.test_motor.configure('velocity', 1000))
 
-        #need to find a better way to specify what exception
-
+        # need to find a better way to specify what exception

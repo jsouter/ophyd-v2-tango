@@ -1,16 +1,15 @@
 # type: ignore
 from typing import OrderedDict
 # import sys
-# sys.path.append('../src/tangophyd')
+# sys.path.append('../src')
 from ophyd_tango_devices.tango_devices import *
 from ophyd_tango_devices.signals import *
 
 import unittest
 import asyncio
-from PyTango import DeviceProxy, DevFailed  # type: ignore
 from PyTango.asyncio import DeviceProxy as AsyncDeviceProxy
 from ophyd.v2.core import CommsConnector
-from bluesky import RunEngine 
+from bluesky import RunEngine
 from bluesky.run_engine import call_in_bluesky_event_loop
 import random
 import bluesky.plan_stubs as bps
@@ -21,8 +20,6 @@ from ophyd.v2.core import SignalCollection
 
 
 RE = RunEngine()
-
-set_device_proxy_class(AsyncDeviceProxy)
 # should do some tests that operate on the Comm level etc too
 # defaults to ConnectTheRest without connector
 

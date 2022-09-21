@@ -196,19 +196,8 @@ class TangoMotor(TangoDevice, Movable):
     def conf_signals(self):
         return SignalCollection(velocity=self.comm.velocity)
 
-    logging.warning('can not use member position in event loop because it has'
-                    ' to make an async call itself')
-
-    # @property
-    # def position(self):
-    #     reading = call_in_bluesky_event_loop(self.read())
-    #     name = self.get_unique_name(self.comm.position)
-    #     return reading[name]['value']
-        # A heuristic that describes the current position of a device as a
-        # single scalar, as opposed to the potentially multi-valued description
-        # provided by read(). Optional: bluesky itself does not use the
-        #  position attribute, but other parts of the ecosystem might.
-        # Developers are encouraged to implement this attribute where possible.
+    logging.warning('write_and_wait should have stricter requirements than the value not being'
+    'DevState.MOVING')
 
     async def check_value(self, value):
         # should this include timeout even if it does nothing?
@@ -226,6 +215,9 @@ class TangoMotor(TangoDevice, Movable):
     @property
     def timeout(self):
         return getattr(self, '_timeout', None)
+
+    def set_timeout(self, timeout):
+        self._timeout = timeout
 
     def set(self, value, timeout: Optional[float] = None):
         timeout = timeout or self.timeout

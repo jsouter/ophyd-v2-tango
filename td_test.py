@@ -54,8 +54,8 @@ def tango_devices_main():
                 # print(scan_args)
                 call_in_bluesky_event_loop(move_to_start_and_set_vel(scan_motors, velocity))
                 thetime = time.time()
-                # RE(scan([], *scan_args, 101), LiveTable(table_args))
-                RE(scan([], *scan_args, 101))
+                RE(scan([], *scan_args, 101), LiveTable(table_args))
+                # RE(scan([], *scan_args, 101))
                 print(time.time() - thetime)
                 # print('scan' + str(i+1), time.time() - thetime)
 
@@ -73,14 +73,14 @@ def tango_devices_main():
                 # print(len(scan_motors))
                 thetime = time.time()
                 # RE(count(scan_args,countnum), LiveTable(table_args))
-                RE(count(scan_args,countnum))
+                # RE(count(scan_args,countnum))
                 # RE(count(scan_args, 11))
                 # print((time.time() - thetime)/countnum/len(scan_motors))
                 # print(scan_args)
                 print((time.time() - thetime))
 
 
-    # scan1()
+    scan1()
     # scan2()
 
     with CommsConnector():

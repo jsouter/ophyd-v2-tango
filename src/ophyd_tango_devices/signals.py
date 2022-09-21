@@ -6,6 +6,7 @@ from PyTango._tango import (DevState,  # type: ignore
 import asyncio
 import re
 import logging
+from .simproxy import SimProxy
 
 from typing import Callable, Generic, TypeVar, get_type_hints, Dict, Protocol,\
      Type, Coroutine, List, Optional
@@ -15,7 +16,6 @@ from abc import ABC, abstractmethod
 # from collections import OrderedDict
 from bluesky.protocols import Dtype
 from ophyd.v2.core import Signal, SignalR, SignalW, Comm
-from .mockproxy import MockDeviceProxy
 import numpy as np
 # from tango import set_green_mode, get_green_mode  # type: ignore
 # from tango import GreenMode  # type: ignore
@@ -287,7 +287,9 @@ class TangoComm(Comm):
 
     async def _connect_(self):
         if self._sim_mode:
-            proxy = await MockDeviceProxy(self.dev_name)
+            # proxy = await MockDeviceProxy(self.dev_name)
+            proxy = await SimProxy(self.dev_name)
+            print(proxy)
         else:
             proxy = await AsyncDeviceProxy(self.dev_name)
         await self._connector(self, proxy)

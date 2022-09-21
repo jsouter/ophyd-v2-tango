@@ -1,8 +1,7 @@
 from typing import OrderedDict
 # import sys
-# sys.path.append('../src/tangophyd')
+# sys.path.append('../src/')
 from ophyd_tango_devices.tango_devices import *
-from ophyd_tango_devices.mockproxy import *
 from ophyd_tango_devices.signals import *
 
 import unittest
@@ -19,70 +18,55 @@ from bluesky.plans import count, scan
 from bluesky.callbacks import LiveTable, LivePlot
 import bluesky.utils
 
-
-
-
 RE = RunEngine()
 
 class MotorTestMockDeviceProxy(unittest.IsolatedAsyncioTestCase):
     '''Replaces the (Async)DeviceProxy object with the MockDeviceProxy class, so makes no outside calls to the network for Tango commands'''
     #may be a complication in creating a new RunEngine. Have to close the first one perhaps?
+
+    #why wont sim mode work in unittests...
     def setUp(self):
         self.dev_name = "mock/device/name"
+        # self.dev_name = "motor/motctrl01/1"
         with CommsConnector(sim_mode=True):
-            self.test_motor = motor(self.dev_name)
+            self.test_motor = motor(self.dev_name, "test_motor")
+
     def test_instantiate_motor(self):
         pass
 
     def test_motor_readable(self):
-        with CommsConnector():
-            test_motor = motor(self.dev_name)
-        reading = call_in_bluesky_event_loop(test_motor.read())
+        reading = call_in_bluesky_event_loop(self.test_motor.read())
         assert isinstance(reading, dict)
 
     def test_motor_config_writable(self):
-        rand_number = random.random()
-        with CommsConnector():
-            test_motor = motor(self.dev_name, "test_motor")       
-        _, new_reading = call_in_bluesky_event_loop(test_motor.configure("velocity", rand_number))
+        rand_number = random.random() 
+        _, new_reading = call_in_bluesky_event_loop(self.test_motor.configure("velocity", rand_number))
         assert new_reading["test_motor-velocity"]['value'] == rand_number
     
     async def test_cant_set_non_config_attributes(self):
         rand_number = random.random()
-        with CommsConnector():
-            test_motor = motor(self.dev_name, "test_motor")
         with self.assertRaises(KeyError):
-            await test_motor.configure("position", rand_number)
+            await self.test_motor.configure("position", rand_number)
         #this should complain, can't set slow settable (like a motor) attributes like this
 
     def test_read_in_RE(self):
-        with CommsConnector():
-            test_motor = motor(self.dev_name, "test_motor")
-        RE(bps.rd(test_motor))
+        RE(bps.rd(self.test_motor))
 
     def test_count_in_RE(self):
-        with CommsConnector():
-            test_motor = motor(self.dev_name, "test_motor")
-        RE(count([test_motor],1), print)
+        RE(count([self.test_motor],1), print)
 
     def test_count_in_RE_with_callback_named_attribute(self):
-        with CommsConnector():
-            test_motor = motor(self.dev_name, "test_motor")
-        RE(count([test_motor],1), LiveTable(["test_motor-position"]))
+        RE(count([self.test_motor],1), LiveTable(["test_motor-position"]))
 
     def test_motor_bluesky_movable(self):
         rand_number = random.random() + 1.0
-        with CommsConnector():
-            test_motor = motor(self.dev_name, "test_motor")
-        call_in_bluesky_event_loop(test_motor.configure('velocity', 1000))
-        RE(bps.mv(test_motor, rand_number))
+        call_in_bluesky_event_loop(self.test_motor.configure('velocity', 1000))
+        RE(bps.mv(self.test_motor, rand_number))
     
     async def test_motor_scans(self):
         rand_number = random.random() + 1.0
-        with CommsConnector():
-            test_motor = motor(self.dev_name, "test_motor")
-        RE(scan([],test_motor,0,rand_number,2), LiveTable(["test_motor-position"]))
-        currentPos = await test_motor.read()
+        RE(scan([],self.test_motor,0,rand_number,2), LiveTable(["test_motor-position"]))
+        currentPos = await self.test_motor.read()
         assert currentPos['test_motor-position']['value'] == rand_number, "Final position does not equal set number"
 
 # del RE
