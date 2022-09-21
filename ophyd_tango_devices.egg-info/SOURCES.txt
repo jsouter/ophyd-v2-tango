@@ -4,7 +4,7 @@ ophyd_tango_devices.egg-info/SOURCES.txt
 ophyd_tango_devices.egg-info/dependency_links.txt
 ophyd_tango_devices.egg-info/requires.txt
 ophyd_tango_devices.egg-info/top_level.txt
-otd/__init__.py
-otd/mockproxy.py
-otd/signals.py
-otd/tango_devices.py
+src/ophyd_tango_devices/__init__.py
+src/ophyd_tango_devices/mockproxy.py
+src/ophyd_tango_devices/signals.py
+src/ophyd_tango_devices/tango_devices.py

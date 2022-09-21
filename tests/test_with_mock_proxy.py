@@ -23,14 +23,13 @@ import bluesky.utils
 
 
 RE = RunEngine()
-set_device_proxy_class(MockDeviceProxy)
 
 class MotorTestMockDeviceProxy(unittest.IsolatedAsyncioTestCase):
     '''Replaces the (Async)DeviceProxy object with the MockDeviceProxy class, so makes no outside calls to the network for Tango commands'''
     #may be a complication in creating a new RunEngine. Have to close the first one perhaps?
     def setUp(self):
         self.dev_name = "mock/device/name"
-        with CommsConnector():
+        with CommsConnector(sim_mode=True):
             self.test_motor = motor(self.dev_name)
     def test_instantiate_motor(self):
         pass

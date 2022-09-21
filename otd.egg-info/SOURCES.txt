@@ -1,0 +1,10 @@
+setup.py
+otd.egg-info/PKG-INFO
+otd.egg-info/SOURCES.txt
+otd.egg-info/dependency_links.txt
+otd.egg-info/requires.txt
+otd.egg-info/top_level.txt
+src/ophyd_tango_devices/__init__.py
+src/ophyd_tango_devices/mockproxy.py
+src/ophyd_tango_devices/signals.py
+src/ophyd_tango_devices/tango_devices.py

@@ -1,0 +1,1 @@
+from src.ophyd_tango_devices.signals import set_device_proxy_class

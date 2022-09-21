@@ -1,5 +1,4 @@
 from src.ophyd_tango_devices.mockproxy import *
-
 async def mockproxymain1():
     global m
     m = await MockDeviceProxy("mock/device/name")
@@ -44,8 +43,7 @@ async def mockproxymain1():
 
 
 def mockproxymain2():
-    from ophyd_tango_devices.tango_devices import motor
-    from ophyd_tango_devices.signals import get_device_proxy_class, set_device_proxy_class
+    from src.ophyd_tango_devices.tango_devices import motor
     from ophyd.v2.core import CommsConnector
     from bluesky import RunEngine
     import bluesky.plan_stubs as bps
@@ -53,13 +51,10 @@ def mockproxymain2():
     from bluesky.callbacks import LiveTable
     from bluesky.run_engine import call_in_bluesky_event_loop
     from PyTango import DeviceProxy as TestDeviceProxy
-    RE=RunEngine()
+    RE = RunEngine()
 
     
-    set_device_proxy_class(MockDeviceProxy)
-    print(f"device proxy class is set to : {get_device_proxy_class()}")
-
-    with CommsConnector():
+    with CommsConnector(sim_mode=True):
         b = motor("mock/device/name", "b")
     # print(call_in_bluesky_event_loop(b.describe()))
     #dev_attr is getting set but maybe ophyd doesn't know what to do with dev_attrs? it should do!
@@ -74,24 +69,6 @@ def mockproxymain2():
     RE(bps.mv(b, 5))
     #why cant we use bluesky mv on the device using mock device proxy?
     RE(scan([],b,0,1,3), LiveTable(["b-position"]))
-
-def mockproxymain3():
-    from ophyd_tango_devices.tango_devices import motor
-    from ophyd_tango_devices.signals import get_device_proxy_class, set_device_proxy_class
-    from ophyd.v2.core import CommsConnector
-    from bluesky import RunEngine
-    import bluesky.plan_stubs as bps
-    from bluesky.plans import count, scan
-    from bluesky.callbacks import LiveTable
-    from bluesky.run_engine import call_in_bluesky_event_loop
-    from PyTango import DeviceProxy as TestDeviceProxy
-    RE=RunEngine()    
-    set_device_proxy_class(MockDeviceProxy)
-    print(f"device proxy class is set to : {get_device_proxy_class()}")
-
-    with CommsConnector():
-        b = motor("mock/device/name", "b")
-
 
 
 if __name__ in "__main__":

@@ -1,5 +1,5 @@
 Metadata-Version: 1.0
-Name: ophyd-tango-devices
+Name: otd
 Version: 0.2.0
 Summary: Tools to create Tango devices compatible with Ophyd/Bluesky
 Home-page: UNKNOWN
