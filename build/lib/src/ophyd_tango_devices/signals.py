@@ -6,7 +6,7 @@ from PyTango._tango import (DevState,  # type: ignore
 import asyncio
 import re
 import logging
-from .simproxy import SimProxy
+from .proxy import SimProxy, DeviceProxyProtocol
 
 from typing import Callable, Generic, TypeVar, get_type_hints, Dict, Protocol,\
      Type, Coroutine, List, Optional
@@ -53,7 +53,14 @@ class TangoDeviceNotFoundError(KeyError):
 
 async def _get_proxy_from_dict(
             dev_name: str,
-            proxy_dict=_tango_dev_proxies) -> AsyncDeviceProxy:
+            proxy_dict=_tango_dev_proxies) -> DeviceProxyProtocol:
+    """
+    Checks from a dictionary matching Tango Device names to AsyncDeviceProxy
+    objects. If a connector does not create and pass a proxy argument
+    to the TangoSignals when connecting, this gets called by the TangoSignal
+    objects during their connect() method. Returns an existing proxy, or
+    instantiates one and returns it if no proxy is found.
+    """
     if dev_name not in proxy_dict:
         try:
             proxy_future = AsyncDeviceProxy(dev_name)
@@ -63,24 +70,6 @@ async def _get_proxy_from_dict(
             raise TangoDeviceNotFoundError(
                 f"Could not connect to DeviceProxy for {dev_name}")
     return proxy_dict[dev_name]
-
-
-class TangoSignalMonitor(Monitor):
-    logging.warning('should we be able to use the same monitor twice?')
-
-    def __init__(self, signal):
-        self.proxy = signal.proxy
-        self.signal_name = signal.signal_name
-        self.sub_id = None
-
-    async def __call__(self, callback=None):
-        if not self.sub_id:
-            self.sub_id = await self.proxy.subscribe_event(
-                self.signal_name, EventType.CHANGE_EVENT, callback)
-
-    def close(self):
-        self.proxy.unsubscribe_event(self.sub_id)
-        self.sub_id = None
 
 
 class TangoSignal(Signal, ABC):
@@ -119,13 +108,35 @@ class TangoSignal(Signal, ABC):
         return self._source
 
 
+class TangoSignalMonitor(Monitor):
+    """
+    TangoSignalMonitor(signal: TangoSignal)
+    Callable with a single argument: callback, which gets called on the
+    event data whenever there is an update to the Signal.
+    close() is used to cancel the subscription and must be called manually
+    when the desired end condition for monitoring is met.
+    """
+    def __init__(self, signal: TangoSignal):
+        self.signal = signal
+        self.sub_id = None
+
+    async def __call__(self, callback=None):
+        if not self.sub_id:
+            self.sub_id = await self.proxy.subscribe_event(
+                self.signal.signal_name, EventType.CHANGE_EVENT, callback)
+
+    def close(self):
+        self.signal.proxy.unsubscribe_event(self.sub_id)
+        self.sub_id = None
+
+
 class TangoAttrReadError(KeyError):
     ...
 
 
 class TangoAttr(TangoSignal):
     async def connect(self, dev_name: str, attr: str,
-                      proxy: Optional[AsyncDeviceProxy] = None):
+                      proxy: Optional[DeviceProxyProtocol] = None):
         '''Should set the member variables proxy, dev_name and signal_name.
          May be called when no other connector used to connect signals'''
         if not self.connected:
@@ -141,9 +152,6 @@ class TangoAttr(TangoSignal):
 
 
 class _TangoMonitorableSignal:
-    logging.warning("We should check that callbacks only run if there is a new"
-                    "value. CHANGE_EVENT could be anything")
-
     async def monitor_reading(self, callback: Callable[[EventData], None]):
         monitor = TangoSignalMonitor(self)
         await monitor(callback)
@@ -203,7 +211,7 @@ class TangoAttrRW(TangoAttrR, TangoAttrW):
 class TangoCommand(TangoSignal):
     async def connect(
             self, dev_name: str, command: str,
-            proxy: Optional[AsyncDeviceProxy] = None):
+            proxy: Optional[DeviceProxyProtocol] = None):
         if not self.connected:
             self.dev_name = dev_name
             self.signal_name = command
@@ -225,7 +233,7 @@ class TangoPipeReadError(KeyError):
 class TangoPipe(TangoSignal):
     async def connect(
             self, dev_name: str, pipe: str,
-            proxy: Optional[AsyncDeviceProxy] = None):
+            proxy: Optional[DeviceProxyProtocol] = None):
         if not self.connected:
             self.dev_name = dev_name
             self.signal_name = pipe
@@ -242,7 +250,7 @@ class TangoPipeR(TangoPipe, _TangoMonitorableSignal, SignalR):
     logging.warning("manual timestamp for read_pipe")
 
     async def get_reading(self) -> Reading:
-        pipe_data = await self.proxy.read_pipe(self.signal_name)
+        pipe_data = await self.get_value()
         return Reading({"value": pipe_data, "timestamp": TimeVal().now()})
 
     async def get_descriptor(self) -> Descriptor:
@@ -257,7 +265,12 @@ class TangoPipeR(TangoPipe, _TangoMonitorableSignal, SignalR):
                            "source": self.source, })
 
     async def get_value(self):
-        pipe_data = await self.proxy.read_pipe(self.signal_name)
+        try:
+            pipe_data = await self.proxy.read_pipe(self.signal_name)
+        except TypeError:
+            pipe_data = self.proxy.read_pipe(self.signal_name)
+            assert type(pipe_data) is tuple, ("Pipe value should be returned"
+                                              " as tuple, not future")
         return pipe_data
 
 
@@ -297,7 +310,9 @@ class TangoComm(Comm):
     def __repr__(self) -> str:
         return f"{type(self).__name__}(dev_name={self.dev_name!r})"
 
+
 Signals = Dict[str, TangoSignal]
+
 
 def make_tango_signals(comm: TangoComm):
     '''
@@ -315,7 +330,6 @@ def make_tango_signals(comm: TangoComm):
         setattr(comm, name, signal)
         signals[name] = signal
     return signals
-        
 
 
 TangoCommT = TypeVar("TangoCommT", bound=TangoComm, contravariant=True)
@@ -323,7 +337,7 @@ TangoCommT = TypeVar("TangoCommT", bound=TangoComm, contravariant=True)
 
 class TangoConnector(Protocol, Generic[TangoCommT]):
 
-    async def __call__(self, comm: TangoCommT, proxy):
+    async def __call__(self, comm: TangoCommT, proxy: DeviceProxyProtocol):
         ...
 
 

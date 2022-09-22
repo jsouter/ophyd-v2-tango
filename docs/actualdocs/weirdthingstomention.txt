@@ -1,0 +1,14 @@
+_get_dtype: Dtype protocol expects one of "string", "number", "array", "boolean" or "integer", none of which is good to describe pipes which could be better thought of as "objects": a tuple of a string and list of dictionaries
+_tango_dev_proxies is a "hidden" dict structured like {AsyncDeviceProxy: {dev_name1: proxy_object1, ...}, SimProxy: {...}}. It gets called by TangoComm._connect_ to instantiate a proxy which gets passed to each of the signals. The signals will call it themselves if no proxy is passed to them by the detector. it is the duty of the tango_connector author to pass these proxies to the signals either via an argument of the signal's connect method or by setting signal.proxy manually. 
+inconsistency about when read_pipe returns a pipe reading or future. Have enclosed this in a try except block. TangoPipeW write needs to be sync in unit tests but async in ipython... Perhaps PyTango is using the old style coroutine decorators and not async/await keywords
+Pipes are designated as having dimension [2], hard to describe the structure, though generally more suited to configuration than read_signals
+read_pipe does not return its own timestamp.
+
+SimProxy creates dumb device expecting a certain name, right now it represents a Motor device, some features are missing like non-immediate setting of Position, alarm and warning values etc, all values are initialised as 0. needs to be expanded upon
+
+Should TangoMotor inherit from TangoMovable or something?
+
+TangoSingleAttributeDevice etc holds a Comm. Maybe need to make a SignalDevice style object.
+TangoSingleComm defined inside class, maybe that's janky for get_tango_connector dictionary
+
+TangoMotor could inherit from Stageable and Triggerable

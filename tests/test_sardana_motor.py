@@ -1,9 +1,6 @@
 from typing import OrderedDict
-# import sys
-# sys.path.append('../src/')
-from ophyd_tango_devices.tango_devices import *
+from ophyd_tango_devices.devices import *
 from ophyd_tango_devices.signals import *
-
 import unittest
 import asyncio
 from PyTango import DeviceProxy, DevFailed  # type: ignore

@@ -42,7 +42,7 @@ class ExampleDevice(Device):
                             min_warning = 0.3, max_warning = 0.7,
                             min_alarm = 0.2, max_alarm = 0.8,
                             fget="get_limitedvalue", fset = "set_limitedvalue")
-    
+
     def get_limitedvalue(self):
         return self._limitedvalue
 

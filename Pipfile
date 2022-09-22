@@ -4,9 +4,9 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-ophyd = {git = "https://github.com/dls-controls/ophyd"}
-bluesky = {git = "https://github.com/bluesky/bluesky"}
+ophyd = "*"
 pytango = "*"
+bluesky = "*"
 ophyd-tango-devices = {path = "."}
 
 [dev-packages]

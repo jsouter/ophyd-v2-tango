@@ -1,16 +1,6 @@
 on: [push]
 
 jobs:
-#   test:
-#     runs-on: ubuntu-latest
-#     container:
-#       image: ghcr.io/jsouter/alpine:latest
-#       credentials:
-#         username: ${{ github.actor }}
-#         password: ${{ secrets.GITHUB_TOKEN }}
-#     steps:
-#       - name: say hello
-#         run: echo hello
   sardana:
     runs-on: ubuntu-latest
     container:
@@ -21,17 +11,12 @@ jobs:
     steps:
       - name: checkout repo
         uses: actions/checkout@v3.0.2
-      # - name: pipenv install
-      #   run: |
-      #     python3 -m pip install --upgrade pipenv wheel
-      #     pipenv install . 
-      #     pipenv shell
       - name: pip install
         run: |
           pip install . 
       - name: mock proxy unit tests
         run: |
-          python3 -m unittest tests/test_with_mock_proxy.py
+          python3 -m unittest tests/test_sim_proxy.py
       - name: start tango, run example device tests
         run: |
           service mariadb start
@@ -45,8 +30,7 @@ jobs:
           sleep 10
           python3 -m unittest tests/test_sardana_motor.py
       - name: linting
-        # continue-on-error: true
         run: |
-          python3 -m flake8 src/ophyd_tango_devices/*
-          python3 -m mypy src/ophyd_tango_devices/*
+          python3 -m flake8 ophyd_tango_devices/*
+          python3 -m mypy ophyd_tango_devices/*
 

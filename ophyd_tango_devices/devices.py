@@ -1,4 +1,3 @@
-from matplotlib.pyplot import isinteractive
 from PyTango.asyncio import DeviceProxy as AsyncDeviceProxy  # type: ignore
 from PyTango import DevFailed, EventData  # type: ignore
 # from PyTango import DeviceProxy  # type: ignore
@@ -78,7 +77,7 @@ class TangoDevice(Readable, TangoConfigurable):
     @property
     def name(self):
         if not self._name:
-            self._name = re.sub(r'[^a-zA-Z\d]', '-', self.comm.dev_name)
+            self._name = re.sub(r'[^a-zA-Z\d]', '-', self.comm._dev_name)
         return self._name
 
     async def read(self):
@@ -112,9 +111,6 @@ class TangoSingleAttributeDevice(TangoDevice):
 
         class SingleComm(TangoComm):
             attribute: TangoAttrRW
-        logging.warning("TangoSingle__Device maybe shouldnt have"
-                        " SingleComm defined inside class, not sure"
-                        " how this namespaces with the dictionary")
 
         @tango_connector
         async def connectattribute(comm: SingleComm, proxy):
@@ -122,7 +118,6 @@ class TangoSingleAttributeDevice(TangoDevice):
 
         self.comm = SingleComm(dev_name)
         self._read_signals = SignalCollection(**{name: self.comm.attribute})
-        print(self._read_signals._signals)
         super().__init__(self.comm, name)
 
 
@@ -134,9 +129,6 @@ class TangoSingleCommandDevice(TangoDevice):
 
         class SingleComm(TangoComm):
             command: TangoCommand
-        logging.warning("TangoSingle__Device maybe shouldnt have"
-                        " SingleComm defined inside class, not sure"
-                        " how this namespaces with the dictionary")
 
         @tango_connector
         async def connectcommand(comm: SingleComm, proxy):
@@ -144,7 +136,6 @@ class TangoSingleCommandDevice(TangoDevice):
 
         self.comm = SingleComm(dev_name)
         self._read_signals = SignalCollection(**{name: self.comm.command})
-        print(self._read_signals._signals)
         super().__init__(self.comm, name)
 
     def execute_command(self, value=None):
@@ -180,10 +171,6 @@ class TangoSinglePipeDevice(TangoDevice, Configurable):
         return (old_reading, new_reading)
 
 
-logging.warning("Should TangoMotor inherit from TangoMovableDevice?")
-
-
-# class TangoMotor(TangoDevice, Movable, Stageable):
 class TangoMotor(TangoDevice, Movable):
 
     comm: TangoMotorComm
@@ -196,13 +183,13 @@ class TangoMotor(TangoDevice, Movable):
     def conf_signals(self):
         return SignalCollection(velocity=self.comm.velocity)
 
-    logging.warning('write_and_wait should have stricter requirements than the value not being'
-    'DevState.MOVING')
+    logging.warning('write_and_wait should have stricter requirements than'
+                    ' the value not being DevState.MOVING')
 
     async def check_value(self, value):
         # should this include timeout even if it does nothing?
         # how do we check it's not a string
-        config = await self.comm.position.proxy.get_attribute_config(
+        config = await self.comm.position._proxy_.get_attribute_config(
             self.comm.position.name)
         if not isinstance(config.min_value, str):
             assert value >= config.min_value, f"Value {value} is less than"\
@@ -211,7 +198,6 @@ class TangoMotor(TangoDevice, Movable):
             assert value <= config.max_value, f"Value {value} is greater than"\
                                               f" max value {config.max_value}"
 
-    # this should probably be changed, use a @timeout.setter
     @property
     def timeout(self):
         return getattr(self, '_timeout', None)
@@ -223,7 +209,6 @@ class TangoMotor(TangoDevice, Movable):
         timeout = timeout or self.timeout
 
         async def write_and_wait():
-            # await self.check_value(value)
             await self.comm.position.put(value)
             q = asyncio.Queue()
             monitor = await self.comm.state.monitor_value(q.put_nowait)
@@ -238,12 +223,12 @@ class TangoMotor(TangoDevice, Movable):
 
 
 @tango_connector
-async def motorconnector(comm: TangoMotorComm, proxy):
-    proxy = proxy or await _get_proxy_from_dict(comm.dev_name)
+async def motor_connector(comm: TangoMotorComm, proxy):
+    proxy = proxy or await _get_proxy_from_dict(comm._dev_name)
     await asyncio.gather(
-        comm.position.connect(comm.dev_name, "Position", proxy),
-        comm.velocity.connect(comm.dev_name, "Velocity", proxy),
-        comm.state.connect(comm.dev_name, "State", proxy),
+        comm.position.connect(comm._dev_name, "Position", proxy),
+        comm.velocity.connect(comm._dev_name, "Velocity", proxy),
+        comm.state.connect(comm._dev_name, "State", proxy),
     )
     await ConnectSimilarlyNamed(comm, proxy)
 
@@ -252,4 +237,3 @@ def motor(dev_name: str, name: Optional[str] = None):
     name = name or re.sub(r'[^a-zA-Z\d]', '-', dev_name)
     c = TangoMotorComm(dev_name)
     return TangoMotor(c, name)
-

@@ -1,10 +1,7 @@
 # type: ignore
 from typing import OrderedDict
-# import sys
-# sys.path.append('../src')
-from ophyd_tango_devices.tango_devices import *
+from ophyd_tango_devices.devices import *
 from ophyd_tango_devices.signals import *
-
 import unittest
 import asyncio
 from PyTango.asyncio import DeviceProxy as AsyncDeviceProxy
@@ -35,12 +32,14 @@ class ExampleComm(TangoComm):
 class ExampleDevice(TangoDevice):
     def __init__(self, comm: ExampleComm):
         super().__init__(comm)
-        self._read_signals = SignalCollection(randomvalue= self.comm.randomvalue, limitedvalue= self.comm.limitedvalue)
+        self._read_signals = SignalCollection(
+            randomvalue=self.comm.randomvalue,
+            limitedvalue= self.comm.limitedvalue)
+
 
 def example_device(dev_name):
     c = ExampleComm(dev_name)
     return ExampleDevice(c)
-
 
 
 class SignalTest(unittest.IsolatedAsyncioTestCase):
@@ -51,19 +50,20 @@ class SignalTest(unittest.IsolatedAsyncioTestCase):
     def test_cant_connect_tango_attr_without_db(self):
         attr = TangoAttr()
         with self.assertRaises(TangoDeviceNotFoundError):
-            call_in_bluesky_event_loop(attr.connect("non/existing/device", "attribute_name"))
-
+            call_in_bluesky_event_loop(
+                attr.connect("non/existing/device", "attribute_name"))
 
     def test_connect_without_CM(self):
         attr = TangoAttr()
         assert attr.connected == False
-        assert not hasattr(attr, 'proxy')
-        assert not hasattr(attr, 'dev_name')
+        assert not hasattr(attr, '_proxy_')
+        assert not hasattr(attr, '_dev_name')
         assert not hasattr(attr, 'signal_name')
-        call_in_bluesky_event_loop(attr.connect("tango/example/device", "randomvalue"))
-        assert attr.connected == True
-        assert hasattr(attr, 'proxy')
-        assert hasattr(attr, 'dev_name')
+        call_in_bluesky_event_loop(
+            attr.connect("tango/example/device", "randomvalue"))
+        assert attr.connected
+        assert hasattr(attr, '_proxy_')
+        assert hasattr(attr, '_dev_name')
         assert hasattr(attr, 'signal_name')
 
     def test_connected_only_after_CM(self):
@@ -127,8 +127,6 @@ class ExampleDeviceTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_read_array(self):
         call_in_bluesky_event_loop(self.device.comm.array.get_value())
-        # not sure why its now failing to read attributes for this device.
-        # something about cant await  device attribute or something
 
     def test_read_write_array(self):
         async def read_write():
@@ -137,40 +135,47 @@ class ExampleDeviceTest(unittest.IsolatedAsyncioTestCase):
             await self.device.comm.array.put(array)
             array2 = await self.device.comm.array.get_value()
             for i, j in itertools.product(range(2),range(2)):
-                assert array[i][j] == array[i][j]
+                assert array[i][j] == array2[i][j]
         call_in_bluesky_event_loop(read_write())
 
     def test_valid_quality(self):
         async def do_move_get_quality():
-            config = await self.device.comm.limitedvalue.proxy.get_attribute_config("limitedvalue")
+            config = await self.device.comm\
+                .limitedvalue._proxy_.get_attribute_config("limitedvalue")
             alarms = config.alarms
-            await self.device.comm.limitedvalue.put(0.5*(float(alarms.min_warning)+float(alarms.max_warning)))
+            await self.device.comm.limitedvalue.put(
+                0.5*(float(alarms.min_warning)+float(alarms.max_warning)))
             quality = await self.device.comm.limitedvalue.get_quality()
             assert quality == AttrQuality.ATTR_VALID
+        call_in_bluesky_event_loop(do_move_get_quality())
 
     def test_warning_quality(self):
         async def do_move_get_quality():
-            config = await self.device.comm.limitedvalue.proxy.get_attribute_config("limitedvalue")
+            config = await self.device.comm\
+                .limitedvalue._proxy_.get_attribute_config("limitedvalue")
             alarms = config.alarms
-            await self.device.comm.limitedvalue.put(0.5*(float(alarms.min_alarm)+float(alarms.min_warning)))
+            await self.device.comm.limitedvalue.put(
+                0.5*(float(alarms.min_alarm)+float(alarms.min_warning)))
             quality = await self.device.comm.limitedvalue.get_quality()
             assert quality == AttrQuality.ATTR_WARNING
-            call_in_bluesky_event_loop(do_move_get_quality())
+        call_in_bluesky_event_loop(do_move_get_quality())
 
     def test_alarm_quality(self):
         async def do_move_get_quality():
-            config = await self.device.comm.limitedvalue.proxy.get_attribute_config("limitedvalue")
+            config = await self.device.comm\
+                .limitedvalue._proxy_.get_attribute_config("limitedvalue")
             alarms = config.alarms
-            await self.device.comm.limitedvalue.put(0.5*(float(config.min_value)+float(alarms.min_alarm)))
+            await self.device.comm.limitedvalue.put(
+                0.5*(float(config.min_value)+float(alarms.min_alarm)))
             quality = await self.device.comm.limitedvalue.get_quality()
             assert quality == AttrQuality.ATTR_ALARM
-            call_in_bluesky_event_loop(do_move_get_quality())
+        call_in_bluesky_event_loop(do_move_get_quality())
 
     def test_cant_move_out_of_bounds(self):
         async def do_move_get_quality():
-            config = await self.device.comm.limitedvalue.proxy.get_attribute_config("limitedvalue")
+            config = await self.device.comm\
+                .limitedvalue._proxy_.get_attribute_config("limitedvalue")
             with self.assertRaises(DevFailed):
-                await self.device.comm.limitedvalue.put(float(config.min_value) - 1)
+                await self.device.comm.limitedvalue.put(
+                    float(config.min_value) - 1)
         call_in_bluesky_event_loop(do_move_get_quality())
-
-# del RE
