@@ -45,7 +45,7 @@ def example_device(dev_name):
 class SignalTest(unittest.IsolatedAsyncioTestCase):
     def test_cant_instantiate_abstract_tango_signal(self):
         self.assertRaises(TypeError, TangoSignal)
-    
+
     # @unittest.skip("breaks lower tests for some reason")
     def test_cant_connect_tango_attr_without_db(self):
         attr = TangoAttr()
@@ -70,8 +70,8 @@ class SignalTest(unittest.IsolatedAsyncioTestCase):
         dev_name = "tango/example/device"
         with CommsConnector():
             device = example_device(dev_name)
-            assert device.comm.randomvalue.connected == False
-        assert device.comm.randomvalue.connected == True
+            assert not device.comm.randomvalue.connected
+        assert device.comm.randomvalue.connected
 
     async def test_get_reading(self):
         dev_name = "tango/example/device"

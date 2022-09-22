@@ -1,3 +1,0 @@
-ophyd
-bluesky
-pytango
