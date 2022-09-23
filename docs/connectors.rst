@@ -31,12 +31,12 @@ If it is preferred not to attempt to read the signals, perhaps if you are instan
 
 ::
 
-@tango_connector
-def motor_connector(comm: TangoMotorComm, proxy: DeviceProxy):
-    connector = ConnectWithoutReading(comm, proxy)
-    connector(position="Position", velocity="Velocity",
-              state="State", stop="Stop")
+    @tango_connector
+    def motor_connector(comm: TangoMotorComm, proxy: DeviceProxy):
+        connector = ConnectWithoutReading(comm, proxy)
+        connector(position="Position", velocity="Velocity",
+                state="State", stop="Stop")
 
 First, the ConnectWithoutReading class is instantiated with the normal parameters, then it must be called. As the DeviceProxy's get_attribute_list(), get_command_list() and get_pipe_list() methods are synchronous we need not await the connector. 
-The arguments of the connector call should be a set of keyword arguments, where the key is the name of the Comm's attributes in Python and the value is the proper string of the signal name reported by the Tango device server. If a hinted signal in the TangoComm is not specified as a kwarg, the connector will assume that the value should be the same as its Pythonic name, so comm.position would have a value of "position".
+The arguments of the connector call should be a set of keyword arguments, where the key is the name of the Comm's attributes in Python and the value is the proper string of the signal name reported by the Tango device server. If a hinted signal in the TangoComm is not specified as a kwarg, the connector will assume that the value should be the same as its Pythonic name, so comm.position would have a value of "position". If any signal can not be found, a KeyError is raised.
  

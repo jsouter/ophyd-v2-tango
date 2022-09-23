@@ -125,8 +125,8 @@ class SimProxy:
 
     def __call__(self, name):
         if name != "mock/device/name":
-            raise ValueError("SimProxy must be instantiated with"
-                             "'mock/device/name'")
+            raise KeyError("SimProxy must be instantiated with"
+                           "'mock/device/name'")
         self._name = name
         self._attributes = ['Position', 'Velocity', 'State']
         self._attribute_values = {}

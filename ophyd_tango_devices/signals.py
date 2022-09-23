@@ -252,13 +252,11 @@ class TangoPipeR(TangoPipe, _TangoMonitorableSignal, SignalR):
                            "source": self.source, })
 
     async def get_value(self):
-        try:
-            pipe_data = await self._proxy_.read_pipe(self._signal_name)
-        except TypeError:
-            pipe_data = self._proxy_.read_pipe(self._signal_name)
-            assert type(pipe_data) is tuple, ("Pipe value should be returned"
-                                              " as tuple, not future")
-        return pipe_data
+        pipe_data_or_future = self._proxy_.read_pipe(self._signal_name)
+        if type(pipe_data_or_future) is tuple:
+            return pipe_data_or_future
+        else:
+            return await pipe_data_or_future
 
 
 class TangoPipeW(TangoPipe, SignalW):
@@ -416,6 +414,15 @@ class ConnectSimilarlyNamed:
 
 
 class ConnectWithoutReading:
+    """
+    ConnectWithoutReading(comm, proxy)
+    Connects without reading any signals belonging the passed comm object, if
+    a signal of the same signal_name is found in the Device Proxy's signal
+    lists. Callable with keyword arguments where the keys are the names of the
+    signals in the comm object and the values are the signal names as exported
+    by the Tango device server. If not specified, the default signal name will
+    be the object's Pythonic name.
+    """
     def __init__(self, comm: TangoComm,
                  proxy: Optional[DeviceProxy] = None):
         self.comm = comm

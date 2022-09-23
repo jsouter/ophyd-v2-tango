@@ -30,8 +30,6 @@ class TangoMotor(TangoDevice, Movable):
         return SignalCollection(velocity=self.comm.velocity)
 
     async def check_value(self, value):
-        # should this include timeout even if it does nothing?
-        # how do we check it's not a string
         config = await self.comm.position._proxy_.get_attribute_config(
             self.comm.position.name)
         if not isinstance(config.min_value, str):

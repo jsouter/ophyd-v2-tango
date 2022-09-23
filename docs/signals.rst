@@ -109,3 +109,5 @@ returning, for an attribute, a string of the type e.g.
 **tango://<hostname of Tango device server>:10000/motor/motctrl01/1/Position**
 
 Attribute names are separated from the device name with a slash following Tango naming conventions. Since it is in some cases possible to have a command and attribute which share the same name, pipes and commands are specified in parentheses to differentiate then from similarly named attributes.
+
+There appears to be some inconsistency with the PyTango.asyncio DeviceProxy read_pipe() and write_pipe() methods to the point where they may either return an awaitable Future or immediately return the reading. Whenever these methods are called throughout ophyd_tango_devices the reading is performed and then awaited if it is found to be a Future, otherwise returned directly.
