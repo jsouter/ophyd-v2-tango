@@ -1,6 +1,7 @@
 from typing import OrderedDict
 from ophyd_tango_devices.devices import *
 from ophyd_tango_devices.signals import *
+from ophyd_tango_devices.motor import *
 import unittest
 import asyncio
 from PyTango import DeviceProxy, DevFailed  # type: ignore
@@ -25,7 +26,7 @@ class MotorTestReliesOnSardanaDemo(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.dev_name = "motor/motctrl01/1"
         with CommsConnector():
-            self.test_motor = motor(self.dev_name)
+            self.test_motor = tango_motor(self.dev_name)
 
     def test_instantiate_motor(self):
         pass

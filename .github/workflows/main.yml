@@ -1,7 +1,7 @@
 on: [push]
 
 jobs:
-  sardana:
+  run-tests-and-lint:
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/jsouter/ophyd-v2-tango/sardemo:v4
@@ -14,7 +14,7 @@ jobs:
       - name: pip install
         run: |
           pip install . 
-      - name: mock proxy unit tests
+      - name: sim proxy unit tests
         run: |
           python3 -m unittest tests/test_sim_proxy.py
       - name: start tango, run example device tests
@@ -31,6 +31,7 @@ jobs:
           python3 -m unittest tests/test_sardana_motor.py
       - name: linting
         run: |
-          python3 -m flake8 ophyd_tango_devices/*
-          python3 -m mypy ophyd_tango_devices/*
+          python3 -m flake8 ophyd_tango_devices
+          pip install mypy
+          python3 -m mypy ophyd_tango_devices
 

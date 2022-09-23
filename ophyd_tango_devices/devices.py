@@ -1,26 +1,9 @@
-from PyTango.asyncio import DeviceProxy as AsyncDeviceProxy  # type: ignore
-from PyTango import DevFailed, EventData  # type: ignore
-# from PyTango import DeviceProxy  # type: ignore
-from PyTango._tango import (DevState, DevString,  # type: ignore
-                            EventType, TimeVal)
-import asyncio
 import re
-import logging
-from typing import Callable, Generic, TypeVar, get_type_hints, Dict, Protocol,\
-     Type, Coroutine, List, Optional
-from bluesky.protocols import (Reading, Descriptor, Movable, Readable,
-                            #    Stageable, Triggerable,
-                               Configurable)
-# from collections import OrderedDict
-from bluesky.run_engine import call_in_bluesky_event_loop
-from ophyd.v2.core import SignalCollection, AsyncStatus
-from .signals import (_get_proxy_from_dict, TangoAttr,  # type: ignore
-                      TangoAttrR, TangoAttrW,
-                      TangoAttrRW, TangoPipe, TangoPipeR, TangoPipeW,
-                      TangoPipeRW, TangoCommand, TangoComm, tango_connector,
-                      TangoSignal, ConnectSimilarlyNamed)
-# from tango import set_green_mode, get_green_mode  # type: ignore
-# from tango import GreenMode  # type: ignore
+from typing import Optional
+from bluesky.protocols import Readable, Configurable
+from ophyd.v2.core import SignalCollection  # type: ignore
+from .signals import (TangoAttrRW, TangoPipeRW, TangoCommand,
+                      TangoComm, tango_connector)
 
 
 class WrongNumberOfArgumentsError(TypeError):
@@ -96,13 +79,6 @@ class TangoDevice(Readable, TangoConfigurable):
         return self.signal_prefix + signal_name
 
 
-class TangoMotorComm(TangoComm):
-    position: TangoAttrRW
-    velocity: TangoAttrRW
-    state: TangoAttrRW
-    stop: TangoCommand
-
-
 class TangoSingleAttributeDevice(TangoDevice):
     _signal_prefix = ""
 
@@ -117,8 +93,9 @@ class TangoSingleAttributeDevice(TangoDevice):
             await comm.attribute.connect(dev_name, attr_name, proxy)
 
         self.comm = SingleComm(dev_name)
+        self.parent = None
+        self._name = name
         self._read_signals = SignalCollection(**{name: self.comm.attribute})
-        super().__init__(self.comm, name)
 
 
 class TangoSingleCommandDevice(TangoDevice):
@@ -127,18 +104,19 @@ class TangoSingleCommandDevice(TangoDevice):
     def __init__(self, dev_name, attr_name: str, name: Optional[str] = None):
         name = name or attr_name
 
-        class SingleComm(TangoComm):
+        class SingleCommandComm(TangoComm):
             command: TangoCommand
 
         @tango_connector
-        async def connectcommand(comm: SingleComm, proxy):
+        async def connectcommand(comm: SingleCommandComm, proxy):
             await comm.command.connect(dev_name, attr_name, proxy)
 
-        self.comm = SingleComm(dev_name)
+        self.comm = SingleCommandComm(dev_name)
+        self.parent = None
+        self._name = name
         self._read_signals = SignalCollection(**{name: self.comm.command})
-        super().__init__(self.comm, name)
 
-    def execute_command(self, value=None):
+    def execute(self, value=None):
         return self.comm.command.execute(value)
 
 
@@ -157,8 +135,9 @@ class TangoSinglePipeDevice(TangoDevice, Configurable):
             await comm.pipe.connect(dev_name, pipe_name, proxy)
 
         self.comm = SinglePipeComm(dev_name)
+        self.parent = None
+        self._name = name
         self._conf_signals = SignalCollection(**{name: self.comm.pipe})
-        super().__init__(self.comm, name)
 
     async def configure(self, value):
         '''Returns old result of read_configuration and new result of
@@ -169,71 +148,3 @@ class TangoSinglePipeDevice(TangoDevice, Configurable):
         await self.comm.pipe.put(value)
         new_reading = await self.read_configuration()  # type: ignore
         return (old_reading, new_reading)
-
-
-class TangoMotor(TangoDevice, Movable):
-
-    comm: TangoMotorComm
-
-    @property
-    def read_signals(self):
-        return SignalCollection(position=self.comm.position)
-
-    @property
-    def conf_signals(self):
-        return SignalCollection(velocity=self.comm.velocity)
-
-    logging.warning('write_and_wait should have stricter requirements than'
-                    ' the value not being DevState.MOVING')
-
-    async def check_value(self, value):
-        # should this include timeout even if it does nothing?
-        # how do we check it's not a string
-        config = await self.comm.position._proxy_.get_attribute_config(
-            self.comm.position.name)
-        if not isinstance(config.min_value, str):
-            assert value >= config.min_value, f"Value {value} is less than"\
-                                              f" min value {config.min_value}"
-        if not isinstance(config.max_value, str):
-            assert value <= config.max_value, f"Value {value} is greater than"\
-                                              f" max value {config.max_value}"
-
-    @property
-    def timeout(self):
-        return getattr(self, '_timeout', None)
-
-    def set_timeout(self, timeout):
-        self._timeout = timeout
-
-    def set(self, value, timeout: Optional[float] = None):
-        timeout = timeout or self.timeout
-
-        async def write_and_wait():
-            await self.comm.position.put(value)
-            q = asyncio.Queue()
-            monitor = await self.comm.state.monitor_value(q.put_nowait)
-            while True:
-                state_value = await q.get()
-                if state_value != DevState.MOVING:
-                    monitor.close()
-                    break
-        status = AsyncStatus(asyncio.wait_for(
-            write_and_wait(), timeout=timeout))
-        return status
-
-
-@tango_connector
-async def motor_connector(comm: TangoMotorComm, proxy):
-    proxy = proxy or await _get_proxy_from_dict(comm._dev_name)
-    await asyncio.gather(
-        comm.position.connect(comm._dev_name, "Position", proxy),
-        comm.velocity.connect(comm._dev_name, "Velocity", proxy),
-        comm.state.connect(comm._dev_name, "State", proxy),
-    )
-    await ConnectSimilarlyNamed(comm, proxy)
-
-
-def motor(dev_name: str, name: Optional[str] = None):
-    name = name or re.sub(r'[^a-zA-Z\d]', '-', dev_name)
-    c = TangoMotorComm(dev_name)
-    return TangoMotor(c, name)

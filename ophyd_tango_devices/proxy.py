@@ -1,13 +1,13 @@
 import time
 import os
-import logging
 import asyncio
 from typing import Protocol
+from PyTango.asyncio import DeviceProxy as AsyncDeviceProxy  # type: ignore
 
 _sim_sub_count = 0
 
 
-class DeviceProxyProtocol(Protocol):
+class DeviceProxy(Protocol):
     async def read_attribute(self, attr_name: str):
         ...
 
@@ -45,14 +45,10 @@ class DeviceProxyProtocol(Protocol):
         ...
 
 
-class dotdict(dict):
-    """dot.notation access to dictionary attributes"""
-    __getattr__ = dict.get
-    __setattr__ = dict.__setitem__  # type: ignore
-    __delattr__ = dict.__delitem__  # type: ignore
+TangoProxy = AsyncDeviceProxy
 
 
-class _SimDeviceAttribute(dotdict):
+class _SimDeviceAttribute:
     """Class resembling PyTango.DeviceAttribute. Dot-accessible dict returned
     as the value of the "value" key of the DeviceProxy's read_attribute()
     method, containing some of the expected fields"""
@@ -72,10 +68,7 @@ class _SimDeviceAttribute(dotdict):
         return repr
 
 
-class _SimEventData(dotdict):
-    """Class resembling PyTango.EventData. Dot-accessible dict with data
-    and metadata returned when a PyTango.EventType is returned during
-    subscription"""
+class _SimEventData:
     def __init__(self, attr_name, dev_name, hostname):
         self.attr_name = 'tango://' + hostname + ':10000/' + 'dev_name' \
                          + '/' + attr_name.lower()
@@ -111,7 +104,7 @@ class _SimTangoTimestamp:
                 f"tv_usec: {self.tv_usec})")
 
 
-class _SimAttributeInfoEx(dotdict):
+class _SimAttributeInfoEx:
     def __init__(self):
         self.min_alarm = 'Not specified'
         self.max_alarm = 'Not specified'
@@ -149,15 +142,17 @@ class SimProxy:
 
     def _read_attribute_sync(self, attr_name: str):
         if attr_name not in self._attributes:
-            raise Exception()# what kind of exception should I raise?
+            raise KeyError(f"Could not connect to {attr_name}. Note:"
+                           " real device proxy raises DevFailed")
         attr = getattr(self, attr_name, _SimDeviceAttribute(attr_name))
         if attr_name in self._attribute_values:
-            attr.value = self._attribute_values[attr_name]
+            attr.value = self._attribute_values[attr_name]  # type: ignore
         return attr
 
     async def write_attribute(self, attr_name: str, value):
         if attr_name not in self._attributes:
-            raise Exception()  # what kind of exception should I raise? DevFailed?
+            raise KeyError(f"Could not connect to {attr_name}. Note:"
+                           " real device proxy raises DevFailed")
         self._attribute_values[attr_name] = value
 
     def unsubscribe_event(self, sub_id):
@@ -172,13 +167,13 @@ class SimProxy:
 
         def sub_loop():
             last_reading = self._read_attribute_sync(attr_name)
-            last_value = last_reading.value
+            last_value = last_reading.value  # type: ignore
             event = _SimEventData(attr_name, self._name, self._host)
             if callback:
                 callback(event)
             while True:
                 new_reading = self._read_attribute_sync(attr_name)
-                new_value = new_reading.value
+                new_value = new_reading.value  # type: ignore
                 if new_value != last_value:
                     event = _SimEventData(attr_name, self._name, self._host)
                     if callback:

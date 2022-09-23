@@ -1,5 +1,4 @@
-from ophyd_tango_devices.devices import motor
-from ophyd_tango_devices.signals import *
+from ophyd_tango_devices.motor import tango_motor
 import unittest
 from ophyd.v2.core import CommsConnector
 from bluesky.run_engine import RunEngine
@@ -13,12 +12,12 @@ RE = RunEngine()
 
 
 class MotorTestMockDeviceProxy(unittest.IsolatedAsyncioTestCase):
-    '''Replaces the (Async)DeviceProxy object with the MockDeviceProxy class, 
+    '''Replaces the (Async)DeviceProxy object with the MockDeviceProxy class,
     so makes no outside calls to the network for Tango commands'''
     def setUp(self):
         self.dev_name = "mock/device/name"
         with CommsConnector(sim_mode=True):
-            self.test_motor = motor(self.dev_name, "test_motor")
+            self.test_motor = tango_motor(self.dev_name, "test_motor")
 
     def test_instantiate_motor(self):
         pass

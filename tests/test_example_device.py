@@ -10,7 +10,7 @@ from bluesky import RunEngine
 from bluesky.run_engine import call_in_bluesky_event_loop
 import random
 import bluesky.plan_stubs as bps
-from bluesky.plans import count, scan
+from bluesky.plans import count
 from PyTango._tango import AttrQuality
 import itertools
 from ophyd.v2.core import SignalCollection
@@ -48,23 +48,23 @@ class SignalTest(unittest.IsolatedAsyncioTestCase):
 
     # @unittest.skip("breaks lower tests for some reason")
     def test_cant_connect_tango_attr_without_db(self):
-        attr = TangoAttr()
+        attr = TangoAttrR()
         with self.assertRaises(TangoDeviceNotFoundError):
             call_in_bluesky_event_loop(
                 attr.connect("non/existing/device", "attribute_name"))
 
     def test_connect_without_CM(self):
-        attr = TangoAttr()
+        attr = TangoAttrR()
         assert attr.connected == False
         assert not hasattr(attr, '_proxy_')
         assert not hasattr(attr, '_dev_name')
-        assert not hasattr(attr, 'signal_name')
+        assert not hasattr(attr, '_signal_name')
         call_in_bluesky_event_loop(
             attr.connect("tango/example/device", "randomvalue"))
         assert attr.connected
         assert hasattr(attr, '_proxy_')
         assert hasattr(attr, '_dev_name')
-        assert hasattr(attr, 'signal_name')
+        assert hasattr(attr, '_signal_name')
 
     def test_connected_only_after_CM(self):
         dev_name = "tango/example/device"

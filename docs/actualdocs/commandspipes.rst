@@ -1,6 +1,0 @@
-Commands and pipes work in much the same way to attributes in Ophyd. The default connect method for TangoPipe objects is mostly identical except that the DeviceProxy command read_pipe() is used in place of read_attribute() to confirm communication is possible. For a TangoCommand though, since we can not "read" the Command without executing it, which we only want to do during a plan, we must settle for checking that the Tango device contains a command with a name identical to the string of the TangoCommand's signal_name member variable, via DeviceProxy's get_command_list() method. 
-
-Tango pipes are length 2 sequences whose first value is a string: the name of the pipe. 
-The second value is a list of dictionaries representing data elements, each of which contains keys for a Tango datatype, name and value. The number of data elements is not fixed and the list can hold an arbitrary combination of data types, making it useful for user-defined configuration. 
-
-Commands are executable Tango signals. They are able to take in a single value of a set datatype as an input and return a single value of another set datatype. 

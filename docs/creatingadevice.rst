@@ -26,16 +26,13 @@ Subclasses may set these like so:
 ::
 
     class TangoMotor(TangoDevice, Movable):
+        @property
+        def read_signals(self):
+            return SignalCollection(position=self.comm.position)
 
-    comm: TangoMotorComm # for type checking
-
-    @property
-    def read_signals(self):
-        return SignalCollection(position=self.comm.position)
-
-    @property
-    def conf_signals(self):
-        return SignalCollection(velocity=self.comm.velocity)
+        @property
+        def conf_signals(self):
+            return SignalCollection(velocity=self.comm.velocity)
 
 Note that the SignalCollection class' read() and describe() method simply calls asyncio.gather() on each of the Signals' get_reading() or get_descriptor() method and packages the results together in a dictionary as required by the Bluesky API, with the keys being unique identifiers for each of the signals that may consist of the user specified device name and signal name separated by a hyphen. 
 
@@ -56,6 +53,7 @@ e.g.
 
     with CommsConnector():
         position_device = TangoSingleAttributeDevice("motor/motctrl01/1", "Position", "my_position")
+
     RE = RunEngine()
     RE(count([position_device], 1), LiveTable(["my_position"]))
 
@@ -71,4 +69,3 @@ Creation of a device object should look like
         motor_comm = MotorComm("motor/device/name")
         my_motor = TangoMotor(motor_comm)
 
-**How do we best have a test that doesn't require running all the Sardana/tango stuff???**

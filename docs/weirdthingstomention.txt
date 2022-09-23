@@ -12,3 +12,4 @@ TangoSingleAttributeDevice etc holds a Comm. Maybe need to make a SignalDevice s
 TangoSingleComm defined inside class, maybe that's janky for get_tango_connector dictionary
 
 TangoMotor could inherit from Stageable and Triggerable
+
